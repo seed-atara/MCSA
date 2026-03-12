@@ -1,0 +1,39 @@
+# Environment & secrets
+.env
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+env/
+
+# Research output (large generated files)
+output/
+
+# 6C Research Agent (separate project, not part of MCSA)
+src/
+web/
+run.py
+TODO.md
+CHANGELOG.md
+
+# Internal docs (confidential)
+MCSA_Brief_*.md
+MCSA_STATUS.md
+MCSA_PRESENTATION_HIGHLIGHTS.md
+MCSA_ALL_AGENCIES_HIGHLIGHTS.md
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
