@@ -102,12 +102,13 @@ def main():
         agency_count = len(results)
         module_count = sum(len(v) for v in results.values())
         console.print(f"\n[bold green]MCSA complete — {agency_count} agencies, {module_count} reports generated.[/bold green]")
+        sys.exit(0)
     except KeyboardInterrupt:
         console.print("\n[yellow]Surveillance cancelled by user[/yellow]")
         sys.exit(0)
     except Exception as e:
         console.print(f"\n[red]Error during surveillance:[/red] {e}")
-        raise
+        sys.exit(1)
 
 
 if __name__ == "__main__":
