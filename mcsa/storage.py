@@ -1,4 +1,7 @@
-"""MCSA persistent storage — JSON-based persistence for registries, reports, and snapshots.
+"""MCSA persistent storage — local filesystem + Supabase dual-write.
+
+Local files are written for dev/debugging. Supabase is the persistent store
+that survives Railway's ephemeral filesystem and serves the chat UI.
 
 Directory structure under OUTPUT_DIR/mcsa/:
     registries/
@@ -17,10 +20,77 @@ import hashlib
 from datetime import datetime
 from pathlib import Path
 
-from core.config import OUTPUT_DIR
+from rich.console import Console
 
+from core.config import OUTPUT_DIR, SUPABASE_URL, SUPABASE_SERVICE_KEY
+
+console = Console()
 
 MCSA_DIR = OUTPUT_DIR / "mcsa"
+
+# ---------------------------------------------------------------------------
+# Supabase client (lazy init)
+# ---------------------------------------------------------------------------
+
+_supabase_client = None
+
+
+def _get_supabase():
+    """Lazy-init the Supabase client. Returns None if not configured."""
+    global _supabase_client
+    if _supabase_client is not None:
+        return _supabase_client
+    if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
+        return None
+    try:
+        from supabase import create_client
+        _supabase_client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+        return _supabase_client
+    except Exception as e:
+        console.print(f"[yellow]Supabase init failed: {e}[/yellow]")
+        return None
+
+
+def _sb_insert(table: str, data: dict) -> None:
+    """Insert a row into Supabase. Fails silently with a warning."""
+    sb = _get_supabase()
+    if not sb:
+        return
+    try:
+        sb.table(table).insert(data).execute()
+    except Exception as e:
+        console.print(f"[yellow]Supabase {table} insert failed: {e}[/yellow]")
+
+
+def _sb_upsert(table: str, data: dict) -> None:
+    """Upsert a row into Supabase. Fails silently with a warning."""
+    sb = _get_supabase()
+    if not sb:
+        return
+    try:
+        sb.table(table).upsert(data).execute()
+    except Exception as e:
+        console.print(f"[yellow]Supabase {table} upsert failed: {e}[/yellow]")
+
+
+def _sb_select(table: str, filters: dict, order_by: str = None, limit: int = None):
+    """Select rows from Supabase. Returns [] on failure."""
+    sb = _get_supabase()
+    if not sb:
+        return []
+    try:
+        query = sb.table(table).select("*")
+        for col, val in filters.items():
+            query = query.eq(col, val)
+        if order_by:
+            query = query.order(order_by, desc=True)
+        if limit:
+            query = query.limit(limit)
+        result = query.execute()
+        return result.data or []
+    except Exception as e:
+        console.print(f"[yellow]Supabase {table} select failed: {e}[/yellow]")
+        return []
 
 
 def _ensure_dir(path: Path) -> Path:
@@ -34,13 +104,27 @@ def _ensure_dir(path: Path) -> Path:
 
 def load_registry(agency_name: str) -> list[dict]:
     """Load the competitor registry for an agency. Returns [] if none exists."""
+    # Try local first
     path = MCSA_DIR / "registries" / f"{_safe(agency_name)}.json"
-    if not path.exists():
-        return []
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        return []
+    if path.exists():
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    # Fall back to Supabase
+    rows = _sb_select("registries", {"agency_name": _safe(agency_name)}, limit=1)
+    if rows:
+        competitors = rows[0].get("competitors", [])
+        # Cache locally
+        try:
+            _ensure_dir(MCSA_DIR / "registries")
+            path.write_text(json.dumps(competitors, indent=2, ensure_ascii=False), encoding="utf-8")
+        except OSError:
+            pass
+        return competitors
+
+    return []
 
 
 def save_registry(agency_name: str, competitors: list[dict]) -> Path:
@@ -48,21 +132,47 @@ def save_registry(agency_name: str, competitors: list[dict]) -> Path:
     _ensure_dir(MCSA_DIR / "registries")
     path = MCSA_DIR / "registries" / f"{_safe(agency_name)}.json"
     path.write_text(json.dumps(competitors, indent=2, ensure_ascii=False), encoding="utf-8")
+
+    # Sync to Supabase
+    _sb_upsert("registries", {
+        "agency_name": _safe(agency_name),
+        "competitors": competitors,
+        "updated_at": datetime.now().isoformat(),
+    })
+
     return path
 
 
 def load_all_registries() -> dict[str, list[dict]]:
     """Load all registries. Returns {agency_name: [competitors]}."""
-    reg_dir = MCSA_DIR / "registries"
-    if not reg_dir.exists():
-        return {}
     result = {}
-    for f in reg_dir.glob("*.json"):
-        try:
-            data = json.loads(f.read_text(encoding="utf-8"))
-            result[f.stem] = data
-        except (json.JSONDecodeError, OSError):
-            pass
+
+    # Try local first
+    reg_dir = MCSA_DIR / "registries"
+    if reg_dir.exists():
+        for f in reg_dir.glob("*.json"):
+            try:
+                data = json.loads(f.read_text(encoding="utf-8"))
+                result[f.stem] = data
+            except (json.JSONDecodeError, OSError):
+                pass
+
+    # If no local registries, try Supabase
+    if not result:
+        rows = _sb_select("registries", {})
+        for row in rows:
+            name = row.get("agency_name", "")
+            competitors = row.get("competitors", [])
+            if name and competitors:
+                result[name] = competitors
+                # Cache locally
+                try:
+                    _ensure_dir(MCSA_DIR / "registries")
+                    p = MCSA_DIR / "registries" / f"{name}.json"
+                    p.write_text(json.dumps(competitors, indent=2, ensure_ascii=False), encoding="utf-8")
+                except OSError:
+                    pass
+
     return result
 
 
@@ -77,44 +187,82 @@ def save_report(agency_name: str, module: str, cadence: str, content: str) -> Pa
     filename = f"{cadence}_{module}_{ts}.md"
     path = report_dir / filename
     path.write_text(content, encoding="utf-8")
+
+    # Sync to Supabase
+    _sb_insert("reports", {
+        "agency_name": _safe(agency_name),
+        "module": module,
+        "cadence": cadence,
+        "content": content,
+    })
+
     return path
 
 
 def load_latest_report(agency_name: str, module: str, cadence: str) -> str | None:
     """Load the most recent report for an agency/module/cadence. Returns None if none."""
+    # Try local first
     report_dir = MCSA_DIR / "reports" / _safe(agency_name)
-    if not report_dir.exists():
-        return None
-    pattern = f"{cadence}_{module}_*.md"
-    files = sorted(report_dir.glob(pattern), reverse=True)
-    if not files:
-        return None
-    try:
-        return files[0].read_text(encoding="utf-8")
-    except OSError:
-        return None
+    if report_dir.exists():
+        pattern = f"{cadence}_{module}_*.md"
+        files = sorted(report_dir.glob(pattern), reverse=True)
+        if files:
+            try:
+                return files[0].read_text(encoding="utf-8")
+            except OSError:
+                pass
+
+    # Fall back to Supabase
+    rows = _sb_select(
+        "reports",
+        {"agency_name": _safe(agency_name), "module": module, "cadence": cadence},
+        order_by="created_at",
+        limit=1,
+    )
+    if rows:
+        return rows[0].get("content")
+
+    return None
 
 
 def load_report_history(agency_name: str, module: str, cadence: str, limit: int = 5) -> list[dict]:
-    """Load recent reports with timestamps. Returns [{path, timestamp, content_preview}]."""
+    """Load recent reports with timestamps. Returns [{path, timestamp, content_preview, content}]."""
+    # Try local first
     report_dir = MCSA_DIR / "reports" / _safe(agency_name)
-    if not report_dir.exists():
-        return []
-    pattern = f"{cadence}_{module}_*.md"
-    files = sorted(report_dir.glob(pattern), reverse=True)[:limit]
-    result = []
-    for f in files:
-        try:
-            content = f.read_text(encoding="utf-8")
-            result.append({
-                "path": str(f),
-                "timestamp": f.stem.split("_", 2)[-1] if "_" in f.stem else "",
-                "content_preview": content[:500],
-                "content": content,
-            })
-        except OSError:
-            pass
-    return result
+    if report_dir.exists():
+        pattern = f"{cadence}_{module}_*.md"
+        files = sorted(report_dir.glob(pattern), reverse=True)[:limit]
+        if files:
+            result = []
+            for f in files:
+                try:
+                    content = f.read_text(encoding="utf-8")
+                    result.append({
+                        "path": str(f),
+                        "timestamp": f.stem.split("_", 2)[-1] if "_" in f.stem else "",
+                        "content_preview": content[:500],
+                        "content": content,
+                    })
+                except OSError:
+                    pass
+            return result
+
+    # Fall back to Supabase
+    rows = _sb_select(
+        "reports",
+        {"agency_name": _safe(agency_name), "module": module, "cadence": cadence},
+        order_by="created_at",
+        limit=limit,
+    )
+    return [
+        {
+            "path": "",
+            "timestamp": row.get("created_at", ""),
+            "content_preview": row.get("content", "")[:500],
+            "content": row.get("content", ""),
+        }
+        for row in rows
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -142,24 +290,45 @@ def save_website_snapshot(agency_name: str, competitor_name: str, pages: list[di
         })
 
     path.write_text(json.dumps(snapshot, indent=2, ensure_ascii=False), encoding="utf-8")
+
+    # Sync to Supabase
+    _sb_insert("snapshots", {
+        "agency_name": _safe(agency_name),
+        "competitor_name": _safe(competitor_name),
+        "pages": snapshot,
+    })
+
     return path
 
 
 def load_previous_snapshot(agency_name: str, competitor_name: str) -> list[dict] | None:
     """Load the most recent previous snapshot for change detection."""
+    # Try local first
     snap_dir = MCSA_DIR / "snapshots" / _safe(agency_name)
-    if not snap_dir.exists():
-        return None
-    pattern = f"{_safe(competitor_name)}_website_*.json"
-    files = sorted(snap_dir.glob(pattern), reverse=True)
-    # Skip today's snapshot if it exists — we want the previous one
     today = datetime.now().strftime("%Y%m%d")
-    for f in files:
-        if today not in f.name:
-            try:
-                return json.loads(f.read_text(encoding="utf-8"))
-            except (json.JSONDecodeError, OSError):
-                pass
+
+    if snap_dir.exists():
+        pattern = f"{_safe(competitor_name)}_website_*.json"
+        files = sorted(snap_dir.glob(pattern), reverse=True)
+        for f in files:
+            if today not in f.name:
+                try:
+                    return json.loads(f.read_text(encoding="utf-8"))
+                except (json.JSONDecodeError, OSError):
+                    pass
+
+    # Fall back to Supabase — get 2nd most recent (skip today's)
+    rows = _sb_select(
+        "snapshots",
+        {"agency_name": _safe(agency_name), "competitor_name": _safe(competitor_name)},
+        order_by="created_at",
+        limit=2,
+    )
+    for row in rows:
+        ts = row.get("created_at", "")
+        if today not in ts:
+            return row.get("pages", [])
+
     return None
 
 
@@ -200,6 +369,15 @@ def save_run_log(cadence: str, agencies: list[str], cost: dict, duration_seconds
     }
     with open(log_path, "a", encoding="utf-8") as f:
         f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+
+    # Sync to Supabase
+    _sb_insert("run_logs", {
+        "cadence": cadence,
+        "agencies": agencies,
+        "cost": cost,
+        "duration_seconds": round(duration_seconds, 1),
+    })
+
     return log_path
 
 
