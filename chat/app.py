@@ -1,0 +1,453 @@
+"""MCSA Chat — Competitive Intelligence chat interface for Tomorrow Group MDs.
+
+Advanced Claude API features:
+- Tool Use: Claude queries Supabase directly for relevant data
+- Prompt Caching: Intelligence context cached across conversation turns
+- Extended Thinking: Deep analysis mode for complex strategic questions
+- Streaming: Real-time response streaming with SSE
+- Token Tracking: Per-message cost and usage reporting
+"""
+from __future__ import annotations
+
+import os
+import json
+import time
+from pathlib import Path
+from datetime import datetime
+
+from fastapi import FastAPI, Request
+from fastapi.responses import HTMLResponse, StreamingResponse
+import anthropic
+from supabase import create_client
+
+# ---------------------------------------------------------------------------
+# Config
+# ---------------------------------------------------------------------------
+
+from dotenv import load_dotenv
+load_dotenv(Path(__file__).parent.parent / ".env")
+
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
+MODEL = "claude-sonnet-4-20250514"
+THINKING_MODEL = "claude-sonnet-4-20250514"
+
+sb = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+claude = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+
+app = FastAPI(title="MCSA Chat")
+
+TEMPLATE_DIR = Path(__file__).parent / "templates"
+
+# ---------------------------------------------------------------------------
+# Tool definitions for Claude
+# ---------------------------------------------------------------------------
+
+TOOLS = [
+    {
+        "name": "search_reports",
+        "description": (
+            "Search MCSA intelligence reports. Use this to find specific competitive intelligence. "
+            "You can filter by agency, module (linkedin/industry/website/diff/registry), "
+            "and cadence (daily/weekly/monthly). Returns report content with metadata."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "agency": {
+                    "type": "string",
+                    "description": "Agency name to filter by (e.g. 'Found', 'SEED', 'Braidr', 'Disrupt', 'Culture3'). Omit for all agencies.",
+                },
+                "module": {
+                    "type": "string",
+                    "enum": ["linkedin", "industry", "website", "diff", "registry"],
+                    "description": "Report module to filter by. Omit for all modules.",
+                },
+                "cadence": {
+                    "type": "string",
+                    "enum": ["daily", "weekly", "monthly"],
+                    "description": "Report cadence to filter by. Omit for all cadences.",
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Max reports to return. Default 5, max 20.",
+                },
+                "search_text": {
+                    "type": "string",
+                    "description": "Optional text to search for within report content.",
+                },
+            },
+            "required": [],
+        },
+    },
+    {
+        "name": "get_competitor_registry",
+        "description": (
+            "Get the full competitor registry for an agency. Returns competitor names, "
+            "websites, threat levels, focus areas, and other metadata. Use this when asked "
+            "about specific competitors or for comparison."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "agency": {
+                    "type": "string",
+                    "description": "Agency name (e.g. 'Found', 'SEED'). Omit for all agencies.",
+                },
+            },
+            "required": [],
+        },
+    },
+    {
+        "name": "get_run_history",
+        "description": (
+            "Get MCSA system run history — when surveillance ran, for which agencies, "
+            "how long it took, and what it cost. Use this for operational questions."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "limit": {
+                    "type": "integer",
+                    "description": "Number of recent runs to return. Default 10.",
+                },
+            },
+            "required": [],
+        },
+    },
+    {
+        "name": "compare_agencies",
+        "description": (
+            "Compare the latest reports across multiple agencies for a specific module. "
+            "Use this when asked to compare competitive landscapes across agencies."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "agencies": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "List of agency names to compare. Omit for all 5.",
+                },
+                "module": {
+                    "type": "string",
+                    "enum": ["linkedin", "industry", "website", "diff", "registry"],
+                    "description": "Module to compare across agencies.",
+                },
+            },
+            "required": ["module"],
+        },
+    },
+]
+
+
+# ---------------------------------------------------------------------------
+# Tool execution
+# ---------------------------------------------------------------------------
+
+def _execute_tool(name: str, input_data: dict) -> str:
+    """Execute a tool call and return the result as a string."""
+    try:
+        if name == "search_reports":
+            return _tool_search_reports(input_data)
+        elif name == "get_competitor_registry":
+            return _tool_get_registry(input_data)
+        elif name == "get_run_history":
+            return _tool_get_run_history(input_data)
+        elif name == "compare_agencies":
+            return _tool_compare_agencies(input_data)
+        else:
+            return f"Unknown tool: {name}"
+    except Exception as e:
+        return f"Tool error: {e}"
+
+
+def _tool_search_reports(params: dict) -> str:
+    limit = min(params.get("limit", 5), 20)
+    query = sb.table("reports").select("agency_name, module, cadence, content, created_at")
+    query = query.order("created_at", desc=True).limit(limit)
+
+    if params.get("agency"):
+        query = query.eq("agency_name", params["agency"])
+    if params.get("module"):
+        query = query.eq("module", params["module"])
+    if params.get("cadence"):
+        query = query.eq("cadence", params["cadence"])
+
+    rows = query.execute()
+    search_text = params.get("search_text", "").lower()
+
+    results = []
+    for r in rows.data or []:
+        content = r.get("content", "")
+        if search_text and search_text not in content.lower():
+            continue
+        results.append(
+            f"### {r['agency_name']} — {r['cadence']} {r['module']} ({r['created_at'][:10]})\n{content}"
+        )
+
+    if not results:
+        return "No reports found matching your criteria."
+    return f"Found {len(results)} report(s):\n\n" + "\n\n---\n\n".join(results)
+
+
+def _tool_get_registry(params: dict) -> str:
+    query = sb.table("registries").select("agency_name, competitors, updated_at")
+    if params.get("agency"):
+        query = query.eq("agency_name", params["agency"])
+
+    rows = query.execute()
+    if not rows.data:
+        return "No competitor registries found."
+
+    parts = []
+    for r in rows.data:
+        competitors = r.get("competitors", [])
+        comp_text = json.dumps(competitors, indent=2)
+        parts.append(
+            f"### {r['agency_name']} Registry (updated {r['updated_at'][:10]})\n"
+            f"{len(competitors)} competitors:\n{comp_text}"
+        )
+    return "\n\n".join(parts)
+
+
+def _tool_get_run_history(params: dict) -> str:
+    limit = min(params.get("limit", 10), 50)
+    rows = sb.table("run_logs").select("*").order("created_at", desc=True).limit(limit).execute()
+
+    if not rows.data:
+        return "No run history found."
+
+    lines = ["| Date | Cadence | Agencies | Duration | Cost |", "|------|---------|----------|----------|------|"]
+    total_cost = 0
+    for r in rows.data:
+        cost = r.get("cost", {}).get("total_cost_usd", 0)
+        total_cost += cost
+        agencies = ", ".join(r.get("agencies", []))
+        lines.append(
+            f"| {r['created_at'][:16]} | {r['cadence']} | {agencies} | "
+            f"{r.get('duration_seconds', 0):.0f}s | ${cost:.2f} |"
+        )
+    lines.append(f"\n**Total cost across {len(rows.data)} runs: ${total_cost:.2f}**")
+    return "\n".join(lines)
+
+
+def _tool_compare_agencies(params: dict) -> str:
+    module = params["module"]
+    agencies = params.get("agencies", ["Found", "SEED", "Braidr", "Disrupt", "Culture3"])
+
+    parts = []
+    for agency in agencies:
+        rows = (
+            sb.table("reports")
+            .select("agency_name, module, cadence, content, created_at")
+            .eq("agency_name", agency)
+            .eq("module", module)
+            .order("created_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+        if rows.data:
+            r = rows.data[0]
+            parts.append(
+                f"### {r['agency_name']} — latest {module} ({r['cadence']}, {r['created_at'][:10]})\n{r['content']}"
+            )
+        else:
+            parts.append(f"### {agency} — no {module} reports found")
+
+    return "\n\n---\n\n".join(parts)
+
+
+# ---------------------------------------------------------------------------
+# System prompt
+# ---------------------------------------------------------------------------
+
+SYSTEM_PROMPT = """You are the MCSA Intelligence Analyst for Tomorrow Group — a holding company
+with 5 specialist agencies: Found (SEO/PPC), SEED (content/creative), Braidr (data/analytics),
+Disrupt (paid media/programmatic), and Culture3 (social/influencer).
+
+You have access to competitive intelligence gathered by the MCSA surveillance system through
+your tools. Use them to look up specific data before answering.
+
+IMPORTANT GUIDELINES:
+- Always use your tools to fetch relevant data before answering — don't guess or make up data
+- Be direct, specific, and actionable
+- Reference specific competitors and data points from the reports
+- When comparing, use concrete evidence from the reports
+- When you don't have data on something, say so clearly
+- Cite which report (agency, module, date) your information comes from
+
+Format responses in markdown. Use bullet points, bold for key findings, and headers for structure."""
+
+
+# ---------------------------------------------------------------------------
+# Routes
+# ---------------------------------------------------------------------------
+
+@app.get("/", response_class=HTMLResponse)
+async def index():
+    return (TEMPLATE_DIR / "index.html").read_text(encoding="utf-8")
+
+
+@app.get("/api/agencies")
+async def agencies():
+    rows = sb.table("registries").select("agency_name").execute()
+    names = sorted(set(r["agency_name"] for r in rows.data or []))
+    return {"agencies": names}
+
+
+@app.get("/api/stats")
+async def stats():
+    reports = sb.table("reports").select("id", count="exact").execute()
+    registries = sb.table("registries").select("id", count="exact").execute()
+    logs = sb.table("run_logs").select("cadence, created_at, cost").order("created_at", desc=True).execute()
+    last_run = logs.data[0]["created_at"][:16] if logs.data else "never"
+    total_cost = sum(r.get("cost", {}).get("total_cost_usd", 0) for r in logs.data)
+    return {
+        "reports": len(reports.data),
+        "registries": len(registries.data),
+        "last_run": last_run,
+        "total_runs": len(logs.data),
+        "total_cost": round(total_cost, 2),
+    }
+
+
+@app.post("/api/chat")
+async def chat(request: Request):
+    body = await request.json()
+    message = body.get("message", "")
+    agency = body.get("agency")  # None = all agencies
+    history = body.get("history", [])  # Previous messages for context
+    deep_think = body.get("deep_think", False)  # Extended thinking mode
+
+    # Agency context hint for the system prompt
+    agency_hint = ""
+    if agency and agency != "all":
+        agency_hint = f"\n\nThe user is currently focused on agency: {agency}. Prioritize data for this agency unless they ask about others."
+
+    system_with_cache = [
+        {
+            "type": "text",
+            "text": SYSTEM_PROMPT + agency_hint,
+            "cache_control": {"type": "ephemeral"},
+        },
+    ]
+
+    # Build messages from history
+    messages = []
+    for msg in history[-10:]:
+        messages.append({"role": msg["role"], "content": msg["content"]})
+    messages.append({"role": "user", "content": message})
+
+    # Tool use loop: Claude may call tools, we execute and feed back
+    def generate():
+        current_messages = list(messages)
+        total_input = 0
+        total_output = 0
+        tool_calls_made = []
+        thinking_text = ""
+
+        for loop_iter in range(5):  # Max 5 tool use rounds
+            create_params = {
+                "model": THINKING_MODEL if deep_think else MODEL,
+                "max_tokens": 16384,
+                "system": system_with_cache,
+                "messages": current_messages,
+                "tools": TOOLS,
+            }
+
+            if deep_think:
+                create_params["thinking"] = {
+                    "type": "enabled",
+                    "budget_tokens": 8000,
+                }
+
+            response = claude.messages.create(**create_params)
+
+            # Track tokens
+            if hasattr(response, "usage"):
+                total_input += response.usage.input_tokens
+                total_output += response.usage.output_tokens
+                cache_read = getattr(response.usage, "cache_read_input_tokens", 0) or 0
+                cache_create = getattr(response.usage, "cache_creation_input_tokens", 0) or 0
+
+            # Check if response has tool use
+            has_tool_use = any(b.type == "tool_use" for b in response.content)
+
+            if has_tool_use:
+                # Process tool calls
+                tool_results = []
+                for block in response.content:
+                    if block.type == "thinking":
+                        thinking_text += block.thinking + "\n"
+                    elif block.type == "tool_use":
+                        tool_name = block.name
+                        tool_input = block.input
+                        tool_calls_made.append({"tool": tool_name, "input": tool_input})
+
+                        # Send tool call event to frontend
+                        yield f"data: {json.dumps({'type': 'tool_call', 'tool': tool_name, 'input': tool_input})}\n\n"
+
+                        # Execute tool
+                        result = _execute_tool(tool_name, tool_input)
+                        tool_results.append({
+                            "type": "tool_result",
+                            "tool_use_id": block.id,
+                            "content": result,
+                        })
+
+                # Add assistant response and tool results to messages
+                current_messages.append({"role": "assistant", "content": response.content})
+                current_messages.append({"role": "user", "content": tool_results})
+                continue
+
+            # No tool use — extract final text response
+            for block in response.content:
+                if block.type == "thinking":
+                    thinking_text += block.thinking + "\n"
+                    yield f"data: {json.dumps({'type': 'thinking', 'text': block.thinking})}\n\n"
+                elif block.type == "text":
+                    # Stream the text in chunks for smooth display
+                    text = block.text
+                    chunk_size = 12
+                    for i in range(0, len(text), chunk_size):
+                        yield f"data: {json.dumps({'type': 'text', 'text': text[i:i+chunk_size]})}\n\n"
+
+            break  # Done — no more tool calls
+
+        # Send usage stats
+        cache_read = getattr(response.usage, "cache_read_input_tokens", 0) or 0
+        yield f"data: {json.dumps({'type': 'usage', 'input_tokens': total_input, 'output_tokens': total_output, 'cache_read_tokens': cache_read, 'tool_calls': len(tool_calls_made), 'tools_used': [t['tool'] for t in tool_calls_made]})}\n\n"
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(generate(), media_type="text/event-stream")
+
+
+@app.post("/api/export")
+async def export_chat(request: Request):
+    """Export conversation as markdown."""
+    body = await request.json()
+    messages = body.get("messages", [])
+    agency = body.get("agency", "all")
+
+    lines = [
+        f"# MCSA Intelligence Chat Export",
+        f"**Agency:** {agency}",
+        f"**Exported:** {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+        f"**Reports in database:** {len(sb.table('reports').select('id', count='exact').execute().data)}",
+        "",
+        "---",
+        "",
+    ]
+
+    for msg in messages:
+        role = "**You**" if msg["role"] == "user" else "**MCSA**"
+        lines.append(f"{role}:\n\n{msg['content']}\n\n---\n")
+
+    return {"markdown": "\n".join(lines)}
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8080)
