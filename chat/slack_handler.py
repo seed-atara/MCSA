@@ -172,7 +172,7 @@ def _execute_tool(name: str, input_data: dict) -> str:
 
 
 def _tool_search_reports(sb, params: dict) -> str:
-    limit = min(params.get("limit", 5), 10)  # Lower limit for Slack
+    limit = min(params.get("limit", 3), 5)  # Keep small for Slack token budget
     query = sb.table("reports").select("agency_name, module, cadence, content, created_at")
     query = query.order("created_at", desc=True).limit(limit)
     if params.get("agency"):
@@ -188,8 +188,8 @@ def _tool_search_reports(sb, params: dict) -> str:
         content = r.get("content", "")
         if search_text and search_text not in content.lower():
             continue
-        # Truncate content for Slack context
-        preview = content[:800] if len(content) > 800 else content
+        # Truncate content aggressively for Slack token budget
+        preview = content[:500] if len(content) > 500 else content
         results.append(
             f"### {r['agency_name']} — {r['cadence']} {r['module']} ({r['created_at'][:10]})\n{preview}"
         )
@@ -369,13 +369,27 @@ def _process_command(text: str, user_id: str, response_url: str) -> None:
 
         # Tool-use loop (max 5 rounds, same as web chat)
         for _ in range(5):
-            response = claude_client.messages.create(
-                model=MODEL,
-                max_tokens=4096,  # Shorter for Slack
-                system=SYSTEM_PROMPT,
-                messages=messages,
-                tools=TOOLS,
-            )
+            # Retry with backoff for rate limits (429)
+            response = None
+            for attempt in range(3):
+                try:
+                    response = claude_client.messages.create(
+                        model=MODEL,
+                        max_tokens=2048,  # Concise for Slack
+                        system=SYSTEM_PROMPT,
+                        messages=messages,
+                        tools=TOOLS,
+                    )
+                    break
+                except anthropic.RateLimitError:
+                    if attempt < 2:
+                        import time as _time
+                        _time.sleep(5 * (attempt + 1))  # 5s, 10s backoff
+                    else:
+                        raise
+
+            if response is None:
+                break
 
             has_tool_use = any(b.type == "tool_use" for b in response.content)
 
@@ -384,6 +398,9 @@ def _process_command(text: str, user_id: str, response_url: str) -> None:
                 for block in response.content:
                     if block.type == "tool_use":
                         result = _execute_tool(block.name, block.input)
+                        # Truncate tool results to reduce token usage
+                        if len(result) > 2000:
+                            result = result[:2000] + "\n\n[...truncated for brevity]"
                         tool_results.append({
                             "type": "tool_result",
                             "tool_use_id": block.id,
@@ -449,11 +466,17 @@ def _process_command(text: str, user_id: str, response_url: str) -> None:
 
         _post_to_slack(response_url, payload)
 
-    except Exception as e:
-        # Post error back to user
+    except anthropic.RateLimitError:
         _post_to_slack(response_url, {
             "response_type": "ephemeral",
-            "text": f":warning: MCSA error: {str(e)[:500]}",
+            "text": ":hourglass: MCSA is temporarily rate-limited. Please try again in 30 seconds.",
+        })
+    except Exception as e:
+        # Log full error server-side, show clean message to user
+        print(f"[MCSA Slack] Error: {e}")
+        _post_to_slack(response_url, {
+            "response_type": "ephemeral",
+            "text": ":warning: MCSA encountered an issue processing your request. Please try again.",
         })
 
 
