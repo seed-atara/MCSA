@@ -22,7 +22,7 @@ import time
 import threading
 import urllib.request
 import urllib.error
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Request, Response
 import anthropic
@@ -48,6 +48,173 @@ def _get_sb():
     """Get or create Supabase client."""
     from supabase import create_client
     return create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_SERVICE_KEY"))
+
+
+# ---------------------------------------------------------------------------
+# Per-user conversation memory
+# ---------------------------------------------------------------------------
+
+# Max messages to include as context (user + assistant pairs)
+MAX_HISTORY_MESSAGES = 10
+
+
+def _load_conversation(user_id: str, channel_id: str) -> dict | None:
+    """Load most recent conversation for a user+channel pair from Supabase.
+
+    Returns the conversation row dict (with 'id', 'messages', etc.) or None.
+    """
+    sb = _get_sb()
+    try:
+        result = (
+            sb.table("conversations")
+            .select("*")
+            .eq("user_id", user_id)
+            .eq("channel_id", channel_id)
+            .eq("platform", "slack")
+            .order("updated_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+        if result.data:
+            return result.data[0]
+    except Exception as e:
+        print(f"[MCSA Slack] Error loading conversation: {e}")
+    return None
+
+
+def _save_conversation(
+    user_id: str,
+    user_name: str,
+    channel_id: str,
+    messages: list[dict],
+    conversation_id: str | None = None,
+    agency_filter: str | None = None,
+) -> None:
+    """Save or update conversation in Supabase.
+
+    If conversation_id is provided, updates the existing row.
+    Otherwise, inserts a new row with a title from the first user message.
+    """
+    sb = _get_sb()
+    now = datetime.now(timezone.utc).isoformat()
+
+    # Only store user/assistant text messages (strip tool_use/tool_result blocks)
+    storable = _extract_storable_messages(messages)
+
+    try:
+        if conversation_id:
+            sb.table("conversations").update({
+                "messages": storable,
+                "message_count": len(storable),
+                "updated_at": now,
+            }).eq("id", conversation_id).execute()
+        else:
+            # Auto-generate title from first user message
+            title = "Slack conversation"
+            for m in storable:
+                if m.get("role") == "user" and isinstance(m.get("content"), str):
+                    title = m["content"][:50]
+                    break
+
+            sb.table("conversations").insert({
+                "user_id": user_id,
+                "user_name": user_name,
+                "channel_id": channel_id,
+                "platform": "slack",
+                "title": title,
+                "messages": storable,
+                "message_count": len(storable),
+                "agency_filter": agency_filter,
+                "created_at": now,
+                "updated_at": now,
+            }).execute()
+    except Exception as e:
+        print(f"[MCSA Slack] Error saving conversation: {e}")
+
+
+def _extract_storable_messages(messages: list[dict]) -> list[dict]:
+    """Extract only plain user/assistant text messages for storage.
+
+    Filters out tool_use/tool_result content blocks — those are ephemeral
+    and shouldn't be persisted.
+    """
+    storable = []
+    for msg in messages:
+        role = msg.get("role")
+        content = msg.get("content")
+
+        if role == "user" and isinstance(content, str):
+            storable.append({"role": "user", "content": content})
+        elif role == "assistant":
+            # Content may be a string or list of blocks
+            if isinstance(content, str):
+                storable.append({"role": "assistant", "content": content})
+            elif isinstance(content, list):
+                # Extract only text blocks
+                text_parts = []
+                for block in content:
+                    if hasattr(block, "type") and block.type == "text":
+                        text_parts.append(block.text)
+                    elif isinstance(block, dict) and block.get("type") == "text":
+                        text_parts.append(block.get("text", ""))
+                if text_parts:
+                    storable.append({"role": "assistant", "content": "\n".join(text_parts)})
+    return storable
+
+
+def _clear_conversation(user_id: str, channel_id: str) -> bool:
+    """Delete the active conversation for a user+channel. Returns True if deleted."""
+    sb = _get_sb()
+    try:
+        result = (
+            sb.table("conversations")
+            .delete()
+            .eq("user_id", user_id)
+            .eq("channel_id", channel_id)
+            .eq("platform", "slack")
+            .execute()
+        )
+        return bool(result.data)
+    except Exception as e:
+        print(f"[MCSA Slack] Error clearing conversation: {e}")
+        return False
+
+
+def _get_user_profile(user_id: str, user_name: str) -> dict | None:
+    """Look up or auto-create a user in the Supabase users table.
+
+    Returns the user row dict, or None on error.
+    """
+    sb = _get_sb()
+    try:
+        result = (
+            sb.table("users")
+            .select("*")
+            .eq("slack_user_id", user_id)
+            .limit(1)
+            .execute()
+        )
+        if result.data:
+            return result.data[0]
+
+        # Auto-create user
+        now = datetime.now(timezone.utc).isoformat()
+        insert_result = (
+            sb.table("users")
+            .insert({
+                "slack_user_id": user_id,
+                "name": user_name,
+                "role": "user",
+                "created_at": now,
+                "updated_at": now,
+            })
+            .execute()
+        )
+        if insert_result.data:
+            return insert_result.data[0]
+    except Exception as e:
+        print(f"[MCSA Slack] Error getting/creating user profile: {e}")
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -360,14 +527,41 @@ def _md_to_slack(text: str) -> str:
 # Background processing
 # ---------------------------------------------------------------------------
 
-def _process_command(text: str, user_id: str, response_url: str) -> None:
-    """Run the Claude tool-use loop and post result back to Slack."""
+def _process_command(
+    text: str,
+    user_id: str,
+    user_name: str,
+    channel_id: str,
+    response_url: str,
+) -> None:
+    """Run the Claude tool-use loop and post result back to Slack.
+
+    Loads prior conversation history for this user+channel, includes
+    the last MAX_HISTORY_MESSAGES messages as context, and saves the
+    updated conversation after receiving Claude's response.
+    """
     try:
         claude_client = _get_claude()
 
-        messages = [{"role": "user", "content": text}]
+        # Ensure user profile exists
+        _get_user_profile(user_id, user_name)
+
+        # Load conversation history for this user+channel
+        conv = _load_conversation(user_id, channel_id)
+        conv_id = conv["id"] if conv else None
+        history = conv.get("messages", []) if conv else []
+
+        # Build messages: include last N history messages + new user message
+        messages = []
+        if history:
+            # Take the tail of the conversation to stay within token limits
+            recent = history[-MAX_HISTORY_MESSAGES:]
+            for m in recent:
+                messages.append({"role": m["role"], "content": m["content"]})
+        messages.append({"role": "user", "content": text})
 
         # Tool-use loop (max 5 rounds, same as web chat)
+        final_text = ""
         for _ in range(5):
             # Retry with backoff for rate limits (429)
             response = None
@@ -411,11 +605,21 @@ def _process_command(text: str, user_id: str, response_url: str) -> None:
                 continue
 
             # Extract final text
-            final_text = ""
             for block in response.content:
                 if block.type == "text":
                     final_text += block.text
+
+            # Append the final assistant message for storage
+            messages.append({"role": "assistant", "content": response.content})
             break
+
+        # Save conversation (history + new user message + assistant reply)
+        # Merge old history with the new messages for persistence
+        full_history = list(history)  # prior messages
+        full_history.append({"role": "user", "content": text})
+        if final_text:
+            full_history.append({"role": "assistant", "content": final_text})
+        _save_conversation(user_id, user_name, channel_id, full_history, conv_id)
 
         # Convert to Slack formatting
         slack_text = _md_to_slack(final_text)
@@ -506,8 +710,10 @@ async def slack_command(request: Request):
     Slack sends a form-encoded POST with:
     - text: the user's query after /mcsa
     - user_id: Slack user ID
+    - user_name: Slack username
+    - channel_id: Slack channel ID
     - response_url: URL to post delayed responses to
-    - token / team_id / channel_id etc.
+    - token / team_id etc.
     """
     body = await request.body()
     form = await request.form()
@@ -520,6 +726,8 @@ async def slack_command(request: Request):
 
     text = form.get("text", "").strip()
     user_id = form.get("user_id", "")
+    user_name = form.get("user_name", "")
+    channel_id = form.get("channel_id", "")
     response_url = form.get("response_url", "")
 
     if not text:
@@ -533,15 +741,51 @@ async def slack_command(request: Request):
                 "• `/mcsa compare linkedin activity across all agencies`\n"
                 "• `/mcsa any new alerts this week?`\n"
                 "• `/mcsa show competitor registry for SEED`\n"
-                "• `/mcsa what changed on competitor websites recently?`"
+                "• `/mcsa what changed on competitor websites recently?`\n\n"
+                "Conversation commands:\n"
+                "• `/mcsa new` — start a fresh conversation\n"
+                "• `/mcsa reset` — clear conversation history\n"
+                "• `/mcsa history` — show conversation stats"
             ),
+        }
+
+    # Handle special conversation commands
+    cmd_lower = text.lower()
+
+    if cmd_lower in ("new", "reset"):
+        cleared = _clear_conversation(user_id, channel_id)
+        msg = (
+            ":white_check_mark: Conversation cleared. Ask me anything!"
+            if cleared
+            else ":white_check_mark: No active conversation — starting fresh."
+        )
+        return {"response_type": "ephemeral", "text": msg}
+
+    if cmd_lower == "history":
+        conv = _load_conversation(user_id, channel_id)
+        if conv:
+            count = conv.get("message_count", 0)
+            title = conv.get("title", "Untitled")
+            created = conv.get("created_at", "")[:16]
+            updated = conv.get("updated_at", "")[:16]
+            return {
+                "response_type": "ephemeral",
+                "text": (
+                    f"*Active conversation:* {title}\n"
+                    f"Messages: {count} | Started: {created} | Last active: {updated}\n\n"
+                    f"Use `/mcsa new` to start a fresh conversation."
+                ),
+            }
+        return {
+            "response_type": "ephemeral",
+            "text": "No active conversation in this channel. Just ask a question to start one!",
         }
 
     # Acknowledge immediately (Slack requires <3s response)
     # Process in background thread, post result via response_url
     thread = threading.Thread(
         target=_process_command,
-        args=(text, user_id, response_url),
+        args=(text, user_id, user_name, channel_id, response_url),
         daemon=True,
     )
     thread.start()

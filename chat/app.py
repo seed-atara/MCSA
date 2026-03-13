@@ -381,6 +381,9 @@ async def chat(request: Request):
     agency = body.get("agency")  # None = all agencies
     history = body.get("history", [])  # Previous messages for context
     deep_think = body.get("deep_think", False)  # Extended thinking mode
+    conversation_id = body.get("conversation_id")  # Load history from DB if provided
+    user_id = body.get("user_id")
+    user_name = body.get("user_name")
 
     # Agency context hint for the system prompt
     agency_hint = ""
@@ -395,10 +398,21 @@ async def chat(request: Request):
         },
     ]
 
-    # Build messages from history
+    # Build messages from history — use DB history if conversation_id provided
     messages = []
-    for msg in history[-10:]:
-        messages.append({"role": msg["role"], "content": msg["content"]})
+    if conversation_id:
+        db_msgs = (
+            sb.table("messages")
+            .select("role, content")
+            .eq("conversation_id", conversation_id)
+            .order("created_at", desc=False)
+            .execute()
+        )
+        for msg in (db_msgs.data or [])[-10:]:
+            messages.append({"role": msg["role"], "content": msg["content"]})
+    else:
+        for msg in history[-10:]:
+            messages.append({"role": msg["role"], "content": msg["content"]})
     messages.append({"role": "user", "content": message})
 
     # Tool use loop: Claude may call tools, we execute and feed back
@@ -479,7 +493,10 @@ async def chat(request: Request):
 
         # Send usage stats
         cache_read = getattr(response.usage, "cache_read_input_tokens", 0) or 0
-        yield f"data: {json.dumps({'type': 'usage', 'input_tokens': total_input, 'output_tokens': total_output, 'cache_read_tokens': cache_read, 'tool_calls': len(tool_calls_made), 'tools_used': [t['tool'] for t in tool_calls_made]})}\n\n"
+        usage_data = {'type': 'usage', 'input_tokens': total_input, 'output_tokens': total_output, 'cache_read_tokens': cache_read, 'tool_calls': len(tool_calls_made), 'tools_used': [t['tool'] for t in tool_calls_made]}
+        if conversation_id:
+            usage_data['conversation_id'] = conversation_id
+        yield f"data: {json.dumps(usage_data)}\n\n"
         yield "data: [DONE]\n\n"
 
     return StreamingResponse(generate(), media_type="text/event-stream")
@@ -608,6 +625,300 @@ async def export_chat(request: Request):
         lines.append(f"{role}:\n\n{msg['content']}\n\n---\n")
 
     return {"markdown": "\n".join(lines)}
+
+
+# ---------------------------------------------------------------------------
+# Phase 4: Conversation Memory
+# ---------------------------------------------------------------------------
+
+@app.get("/api/conversations")
+async def list_conversations(user_id: str):
+    """List recent conversations for a user, ordered by updated_at desc."""
+    rows = (
+        sb.table("conversations")
+        .select("id, title, message_count, agency_filter, updated_at")
+        .eq("user_id", user_id)
+        .order("updated_at", desc=True)
+        .limit(20)
+        .execute()
+    )
+    return {"conversations": rows.data or []}
+
+
+@app.get("/api/conversations/{conv_id}")
+async def get_conversation(conv_id: str):
+    """Get full conversation with messages."""
+    conv = sb.table("conversations").select("*").eq("id", conv_id).single().execute()
+    messages = (
+        sb.table("messages")
+        .select("*")
+        .eq("conversation_id", conv_id)
+        .order("created_at", desc=False)
+        .execute()
+    )
+    return {
+        "conversation": conv.data,
+        "messages": messages.data or [],
+    }
+
+
+@app.delete("/api/conversations/{conv_id}")
+async def delete_conversation(conv_id: str):
+    """Delete a conversation and its messages."""
+    sb.table("messages").delete().eq("conversation_id", conv_id).execute()
+    sb.table("conversations").delete().eq("id", conv_id).execute()
+    return {"status": "deleted"}
+
+
+@app.post("/api/conversations/save")
+async def save_conversation(request: Request):
+    """Save a conversation turn (user message + assistant response).
+
+    The frontend calls this after receiving the full streamed response.
+    Creates a new conversation if conversation_id is not provided.
+    """
+    body = await request.json()
+    conversation_id = body.get("conversation_id")
+    user_id = body.get("user_id")
+    user_message = body.get("user_message", "")
+    assistant_message = body.get("assistant_message", "")
+    agency_filter = body.get("agency_filter")
+
+    now = datetime.utcnow().isoformat()
+
+    # Create conversation if new
+    if not conversation_id:
+        title = user_message[:60].strip()
+        if len(user_message) > 60:
+            title += "..."
+        conv = (
+            sb.table("conversations")
+            .insert({
+                "user_id": user_id,
+                "title": title,
+                "agency_filter": agency_filter,
+                "message_count": 0,
+                "created_at": now,
+                "updated_at": now,
+            })
+            .execute()
+        )
+        conversation_id = conv.data[0]["id"]
+
+    # Insert the two messages
+    sb.table("messages").insert([
+        {
+            "conversation_id": conversation_id,
+            "role": "user",
+            "content": user_message,
+            "created_at": now,
+        },
+        {
+            "conversation_id": conversation_id,
+            "role": "assistant",
+            "content": assistant_message,
+            "created_at": now,
+        },
+    ]).execute()
+
+    # Update conversation metadata
+    msg_count = (
+        sb.table("messages")
+        .select("id", count="exact")
+        .eq("conversation_id", conversation_id)
+        .execute()
+    )
+    sb.table("conversations").update({
+        "message_count": len(msg_count.data),
+        "updated_at": now,
+    }).eq("id", conversation_id).execute()
+
+    return {"conversation_id": conversation_id}
+
+
+# ---------------------------------------------------------------------------
+# Phase 4: User Management
+# ---------------------------------------------------------------------------
+
+@app.post("/api/users/login")
+async def user_login(request: Request):
+    """Simple login — create user if not exists, return user record."""
+    body = await request.json()
+    name = body.get("name", "").strip()
+    agency = body.get("agency", "").strip()
+
+    if not name:
+        return {"error": "name is required"}, 400
+
+    # Check if user exists by name
+    existing = (
+        sb.table("users")
+        .select("*")
+        .eq("name", name)
+        .limit(1)
+        .execute()
+    )
+
+    if existing.data:
+        user = existing.data[0]
+        # Update agency if provided and different
+        if agency and agency != user.get("agency"):
+            sb.table("users").update({"agency": agency}).eq("id", user["id"]).execute()
+            user["agency"] = agency
+        return {"user": user}
+
+    # Create new user
+    now = datetime.utcnow().isoformat()
+    new_user = (
+        sb.table("users")
+        .insert({
+            "name": name,
+            "agency": agency or None,
+            "role": "user",
+            "created_at": now,
+            "updated_at": now,
+        })
+        .execute()
+    )
+    return {"user": new_user.data[0]}
+
+
+@app.get("/api/users/{user_id}")
+async def get_user(user_id: str):
+    """Get user profile."""
+    user = sb.table("users").select("*").eq("id", user_id).single().execute()
+    return {"user": user.data}
+
+
+@app.put("/api/users/{user_id}")
+async def update_user(user_id: str, request: Request):
+    """Update user preferences/agency."""
+    body = await request.json()
+    updates = {}
+    if "agency" in body:
+        updates["agency"] = body["agency"]
+    if "name" in body:
+        updates["name"] = body["name"]
+    if "role" in body:
+        updates["role"] = body["role"]
+    if "preferences" in body:
+        updates["preferences"] = body["preferences"]
+
+    if not updates:
+        return {"error": "No fields to update"}
+
+    updates["updated_at"] = datetime.utcnow().isoformat()
+    sb.table("users").update(updates).eq("id", user_id).execute()
+    user = sb.table("users").select("*").eq("id", user_id).single().execute()
+    return {"user": user.data}
+
+
+# ---------------------------------------------------------------------------
+# Phase 4: Report Browser
+# ---------------------------------------------------------------------------
+
+@app.get("/api/reports")
+async def list_reports(
+    agency: str | None = None,
+    module: str | None = None,
+    cadence: str | None = None,
+    search: str | None = None,
+    page: int = 1,
+    per_page: int = 20,
+):
+    """Paginated report listing with filters."""
+    per_page = min(per_page, 50)
+    offset = (page - 1) * per_page
+
+    # Count query
+    count_q = sb.table("reports").select("id", count="exact")
+    if agency:
+        count_q = count_q.eq("agency_name", agency)
+    if module:
+        count_q = count_q.eq("module", module)
+    if cadence:
+        count_q = count_q.eq("cadence", cadence)
+    if search:
+        count_q = count_q.ilike("content", f"%{search}%")
+    count_result = count_q.execute()
+    total = len(count_result.data)
+
+    # Data query
+    query = sb.table("reports").select("id, agency_name, module, cadence, content, created_at")
+    if agency:
+        query = query.eq("agency_name", agency)
+    if module:
+        query = query.eq("module", module)
+    if cadence:
+        query = query.eq("cadence", cadence)
+    if search:
+        query = query.ilike("content", f"%{search}%")
+    query = query.order("created_at", desc=True).range(offset, offset + per_page - 1)
+    rows = query.execute()
+
+    reports = []
+    for r in rows.data or []:
+        content = r.get("content", "")
+        reports.append({
+            "id": r["id"],
+            "agency_name": r["agency_name"],
+            "module": r["module"],
+            "cadence": r["cadence"],
+            "created_at": r["created_at"],
+            "preview": content[:200] + ("..." if len(content) > 200 else ""),
+        })
+
+    return {
+        "reports": reports,
+        "total": total,
+        "page": page,
+        "per_page": per_page,
+    }
+
+
+@app.get("/api/reports/search")
+async def search_reports_fulltext(q: str, limit: int = 20):
+    """Full-text search across report content with highlighted snippets."""
+    limit = min(limit, 50)
+    rows = (
+        sb.table("reports")
+        .select("id, agency_name, module, cadence, content, created_at")
+        .ilike("content", f"%{q}%")
+        .order("created_at", desc=True)
+        .limit(limit)
+        .execute()
+    )
+
+    results = []
+    q_lower = q.lower()
+    for r in rows.data or []:
+        content = r.get("content", "")
+        # Find the search term and extract a snippet around it
+        idx = content.lower().find(q_lower)
+        if idx >= 0:
+            start = max(0, idx - 80)
+            end = min(len(content), idx + len(q) + 80)
+            snippet = ("..." if start > 0 else "") + content[start:end] + ("..." if end < len(content) else "")
+        else:
+            snippet = content[:200]
+
+        results.append({
+            "id": r["id"],
+            "agency_name": r["agency_name"],
+            "module": r["module"],
+            "cadence": r["cadence"],
+            "created_at": r["created_at"],
+            "snippet": snippet,
+        })
+
+    return {"results": results, "query": q, "count": len(results)}
+
+
+@app.get("/api/reports/{report_id}")
+async def get_report(report_id: str):
+    """Get full report content."""
+    report = sb.table("reports").select("*").eq("id", report_id).single().execute()
+    return {"report": report.data}
 
 
 if __name__ == "__main__":

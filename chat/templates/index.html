@@ -336,9 +336,149 @@ body::before { content: ''; position: fixed; inset: 0; background: linear-gradie
 .status-dot { display: inline-block; width: 5px; height: 5px; background: var(--success); border-radius: 50%; margin-right: 5px; box-shadow: 0 0 6px var(--success); animation: pulse-dot 2s ease-in-out infinite; }
 @keyframes pulse-dot { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
 
+/* ═══════════ LOGIN OVERLAY ═══════════ */
+.login-overlay {
+  position: fixed; inset: 0; z-index: 9998;
+  background: rgba(6,6,14,0.92);
+  display: flex; align-items: center; justify-content: center;
+}
+.login-overlay.hidden { display: none; }
+.login-card {
+  background: var(--bg-card); border: 1px solid var(--cyan-dim); border-radius: 6px;
+  padding: 32px 36px; width: 360px; max-width: 90vw;
+  box-shadow: 0 0 40px rgba(0,240,255,0.08), inset 0 0 20px rgba(0,240,255,0.02);
+}
+.login-card h2 { font-family: 'Orbitron', sans-serif; font-size: 1.1rem; font-weight: 700; letter-spacing: 0.2em; color: var(--cyan); margin-bottom: 6px; text-shadow: 0 0 12px var(--cyan-dim); }
+.login-card .login-sub { font-family: 'Share Tech Mono', monospace; font-size: 0.65rem; color: var(--text-dim); letter-spacing: 0.15em; margin-bottom: 20px; }
+.login-field { margin-bottom: 14px; }
+.login-field label { display: block; font-family: 'Share Tech Mono', monospace; font-size: 0.7rem; color: var(--text-dim); letter-spacing: 0.1em; margin-bottom: 4px; text-transform: uppercase; }
+.login-field input, .login-field select {
+  width: 100%; background: var(--bg-input); border: 1px solid var(--border); color: var(--text-primary);
+  font-family: 'Rajdhani', sans-serif; font-size: 0.95rem; padding: 8px 12px; border-radius: 3px;
+  outline: none; transition: border-color 0.15s;
+}
+.login-field input:focus, .login-field select:focus { border-color: var(--cyan-dim); box-shadow: 0 0 10px rgba(0,240,255,0.05); }
+.login-field select { cursor: pointer; appearance: none; -webkit-appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%234a5070' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 10px center; padding-right: 30px; }
+.login-field select option { background: var(--bg-deep); color: var(--text-primary); }
+.login-btn {
+  width: 100%; padding: 10px; margin-top: 6px;
+  background: rgba(0,240,255,0.08); border: 1px solid var(--cyan); color: var(--cyan);
+  font-family: 'Orbitron', sans-serif; font-size: 0.75rem; font-weight: 500; letter-spacing: 0.2em;
+  cursor: pointer; border-radius: 3px; transition: all 0.15s;
+}
+.login-btn:hover { background: rgba(0,240,255,0.15); box-shadow: 0 0 20px rgba(0,240,255,0.12); }
+
+/* ═══════════ USER DISPLAY IN NAV ═══════════ */
+.nav-user { padding: 10px 16px; border-top: 1px solid var(--border); }
+.nav-user-name { font-family: 'Rajdhani', sans-serif; font-size: 0.85rem; font-weight: 600; color: var(--cyan); }
+.nav-user-agency { font-family: 'Share Tech Mono', monospace; font-size: 0.6rem; color: var(--text-dim); letter-spacing: 0.1em; }
+.nav-user-switch { font-family: 'Share Tech Mono', monospace; font-size: 0.6rem; color: var(--text-dim); cursor: pointer; text-decoration: underline; text-decoration-color: var(--border); margin-top: 2px; display: inline-block; transition: color 0.15s; }
+.nav-user-switch:hover { color: var(--cyan); }
+
+/* ═══════════ CONVERSATION SIDEBAR ═══════════ */
+.chat-with-sidebar { display: flex; flex: 1; overflow: hidden; }
+.conv-sidebar {
+  width: 200px; min-width: 200px; background: var(--bg-panel); border-right: 1px solid var(--border);
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.conv-sidebar-header {
+  padding: 10px 12px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between;
+}
+.conv-sidebar-title { font-family: 'Orbitron', sans-serif; font-size: 0.6rem; letter-spacing: 0.2em; color: var(--text-dim); text-transform: uppercase; }
+.conv-new-btn {
+  background: transparent; border: 1px solid var(--border); color: var(--text-dim);
+  font-family: 'Share Tech Mono', monospace; font-size: 0.6rem; padding: 2px 8px;
+  cursor: pointer; border-radius: 2px; transition: all 0.15s;
+}
+.conv-new-btn:hover { border-color: var(--cyan-dim); color: var(--cyan); }
+.conv-list { flex: 1; overflow-y: auto; padding: 4px 0; }
+.conv-list::-webkit-scrollbar { width: 2px; }
+.conv-list::-webkit-scrollbar-thumb { background: var(--border-light); }
+.conv-item {
+  padding: 8px 12px; cursor: pointer; border-left: 2px solid transparent;
+  transition: all 0.15s; position: relative;
+}
+.conv-item:hover { background: var(--bg-hover); }
+.conv-item.active { border-left-color: var(--cyan); background: rgba(0,240,255,0.04); }
+.conv-item-title { font-family: 'Rajdhani', sans-serif; font-size: 0.8rem; font-weight: 500; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.conv-item.active .conv-item-title { color: var(--cyan); }
+.conv-item-meta { font-family: 'Share Tech Mono', monospace; font-size: 0.55rem; color: var(--text-dim); margin-top: 2px; display: flex; align-items: center; gap: 6px; }
+.conv-item-badge { background: var(--border); color: var(--text-mid); font-family: 'Share Tech Mono', monospace; font-size: 0.5rem; padding: 0 4px; border-radius: 2px; }
+.conv-item-delete {
+  position: absolute; top: 8px; right: 8px; width: 16px; height: 16px;
+  background: transparent; border: none; color: var(--text-dim); cursor: pointer;
+  font-family: 'Share Tech Mono', monospace; font-size: 0.65rem; display: none;
+  align-items: center; justify-content: center; border-radius: 2px;
+}
+.conv-item:hover .conv-item-delete { display: flex; }
+.conv-item-delete:hover { color: var(--red); background: var(--red-dim); }
+
+/* ═══════════ REPORTS PANEL ═══════════ */
+.reports-panel { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+.reports-filter-bar {
+  padding: 10px 20px; border-bottom: 1px solid var(--border); background: var(--bg-panel);
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+}
+.reports-filter-bar select, .reports-filter-bar input {
+  background: var(--bg-input); border: 1px solid var(--border); color: var(--text-primary);
+  font-family: 'Share Tech Mono', monospace; font-size: 0.75rem; padding: 5px 10px;
+  border-radius: 2px; outline: none; transition: border-color 0.15s;
+}
+.reports-filter-bar select { cursor: pointer; appearance: none; -webkit-appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%234a5070' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 8px center; padding-right: 24px; }
+.reports-filter-bar select option { background: var(--bg-deep); color: var(--text-primary); }
+.reports-filter-bar input:focus, .reports-filter-bar select:focus { border-color: var(--cyan-dim); }
+.reports-filter-bar input { flex: 1; min-width: 140px; }
+.reports-filter-label { font-family: 'Orbitron', sans-serif; font-size: 0.6rem; letter-spacing: 0.15em; color: var(--text-dim); }
+.reports-list { flex: 1; overflow-y: auto; padding: 16px 20px; display: flex; flex-direction: column; gap: 10px; }
+.reports-list::-webkit-scrollbar { width: 3px; }
+.reports-list::-webkit-scrollbar-thumb { background: var(--border-light); border-radius: 2px; }
+.report-card {
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: 4px;
+  overflow: hidden; transition: border-color 0.15s; cursor: pointer;
+}
+.report-card:hover { border-color: var(--cyan-dim); }
+.report-card.expanded { border-color: var(--cyan-dim); }
+.report-card-header { padding: 12px 16px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.report-card-agency { font-family: 'Orbitron', sans-serif; font-size: 0.7rem; font-weight: 500; color: var(--cyan); letter-spacing: 0.1em; }
+.report-card-module {
+  font-family: 'Share Tech Mono', monospace; font-size: 0.6rem; padding: 1px 6px;
+  border-radius: 2px; text-transform: uppercase;
+}
+.report-card-module.linkedin { background: rgba(0,119,181,0.15); color: #00a0dc; border: 1px solid rgba(0,119,181,0.3); }
+.report-card-module.industry { background: var(--orange-dim); color: var(--orange); border: 1px solid var(--orange-dim); }
+.report-card-module.website { background: var(--magenta-dim); color: var(--magenta); border: 1px solid var(--magenta-dim); }
+.report-card-module.diff { background: var(--cyan-dim); color: var(--cyan); border: 1px solid var(--cyan-dim); }
+.report-card-module.registry { background: rgba(0,255,136,0.1); color: var(--success); border: 1px solid rgba(0,255,136,0.2); }
+.report-card-cadence {
+  font-family: 'Share Tech Mono', monospace; font-size: 0.6rem; color: var(--text-dim);
+  background: rgba(255,255,255,0.03); border: 1px solid var(--border); padding: 1px 6px; border-radius: 2px;
+}
+.report-card-date { font-family: 'Share Tech Mono', monospace; font-size: 0.6rem; color: var(--text-dim); margin-left: auto; }
+.report-card-preview { padding: 0 16px 12px; font-size: 0.8rem; color: var(--text-mid); line-height: 1.5; }
+.report-card-body {
+  display: none; padding: 0 16px 16px; border-top: 1px solid var(--border); margin-top: 0;
+}
+.report-card.expanded .report-card-body { display: block; padding-top: 12px; }
+.report-card.expanded .report-card-preview { display: none; }
+.report-card-body .msg-body { padding: 0; border: none; background: none; }
+.reports-pagination {
+  padding: 10px 20px; border-top: 1px solid var(--border); background: var(--bg-panel);
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+}
+.reports-page-btn {
+  background: transparent; border: 1px solid var(--border); color: var(--text-dim);
+  font-family: 'Share Tech Mono', monospace; font-size: 0.7rem; padding: 4px 10px;
+  cursor: pointer; border-radius: 2px; transition: all 0.15s;
+}
+.reports-page-btn:hover { border-color: var(--cyan-dim); color: var(--cyan); }
+.reports-page-btn.active { border-color: var(--cyan); color: var(--cyan); background: rgba(0,240,255,0.07); }
+.reports-page-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+.reports-page-info { font-family: 'Share Tech Mono', monospace; font-size: 0.65rem; color: var(--text-dim); }
+.reports-empty { text-align: center; padding: 40px; color: var(--text-dim); font-size: 0.85rem; }
+
 /* ═══════════ RESPONSIVE ═══════════ */
 @media (max-width: 1200px) { .stat-row { grid-template-columns: repeat(3, 1fr); } .widget-grid { grid-template-columns: 1fr 1fr; } }
-@media (max-width: 768px) { .nav { display: none; } .stat-row { grid-template-columns: repeat(2, 1fr); } .widget-grid { grid-template-columns: 1fr; } }
+@media (max-width: 768px) { .nav { display: none; } .stat-row { grid-template-columns: repeat(2, 1fr); } .widget-grid { grid-template-columns: 1fr; } .conv-sidebar { display: none; } }
 </style>
 </head>
 <body>
@@ -346,6 +486,30 @@ body::before { content: ''; position: fixed; inset: 0; background: linear-gradie
 <div class="corner corner-tr"></div>
 <div class="corner corner-bl"></div>
 <div class="corner corner-br"></div>
+
+<!-- ═══ LOGIN OVERLAY ═══ -->
+<div class="login-overlay" id="login-overlay">
+  <div class="login-card">
+    <h2>MCSA</h2>
+    <div class="login-sub">Intelligence Command // Identify</div>
+    <div class="login-field">
+      <label>Operative Name</label>
+      <input type="text" id="login-name" placeholder="Enter your name" autocomplete="off" onkeydown="if(event.key==='Enter')loginUser()">
+    </div>
+    <div class="login-field">
+      <label>Agency</label>
+      <select id="login-agency">
+        <option value="Found">Found</option>
+        <option value="SEED">SEED</option>
+        <option value="Braidr">Braidr</option>
+        <option value="Disrupt">Disrupt</option>
+        <option value="Culture3">Culture3</option>
+        <option value="All">All / Admin</option>
+      </select>
+    </div>
+    <button class="login-btn" onclick="loginUser()">ACCESS TERMINAL</button>
+  </div>
+</div>
 
 <div class="app">
   <!-- ═══ NAV ═══ -->
@@ -364,6 +528,10 @@ body::before { content: ''; position: fixed; inset: 0; background: linear-gradie
         <svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
         INTELLIGENCE CHAT
       </button>
+      <button class="nav-btn" data-panel="reports" onclick="switchPanel('reports', this)">
+        <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+        REPORTS
+      </button>
       <button class="nav-btn" data-panel="alerts" onclick="switchPanel('alerts', this)">
         <svg viewBox="0 0 24 24"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 01-3.46 0"/></svg>
         ALERTS
@@ -378,6 +546,12 @@ body::before { content: ''; position: fixed; inset: 0; background: linear-gradie
     </div>
 
     <div style="flex:1"></div>
+
+    <div class="nav-user" id="nav-user" style="display:none">
+      <div class="nav-user-name" id="nav-user-name"></div>
+      <div class="nav-user-agency" id="nav-user-agency"></div>
+      <span class="nav-user-switch" onclick="switchUser()">switch user</span>
+    </div>
 
     <div class="nav-footer">
       <span class="status-dot"></span> TOMORROW GROUP // MCSA
@@ -510,6 +684,15 @@ body::before { content: ''; position: fixed; inset: 0; background: linear-gradie
 
     <!-- ═══ CHAT PANEL ═══ -->
     <div class="panel" id="panel-chat">
+      <div class="chat-with-sidebar">
+      <!-- Conversation Sidebar -->
+      <div class="conv-sidebar">
+        <div class="conv-sidebar-header">
+          <span class="conv-sidebar-title">History</span>
+          <button class="conv-new-btn" onclick="newChat()">+ NEW</button>
+        </div>
+        <div class="conv-list" id="conv-list"></div>
+      </div>
       <div class="chat-panel">
         <div class="chat-header" style="position:relative">
           <div class="header-left">
@@ -561,6 +744,47 @@ body::before { content: ''; position: fixed; inset: 0; background: linear-gradie
           </div>
         </div>
       </div>
+      </div><!-- /chat-with-sidebar -->
+    </div>
+
+    <!-- ═══ REPORTS PANEL ═══ -->
+    <div class="panel" id="panel-reports">
+      <div class="reports-panel">
+        <div class="reports-filter-bar">
+          <span class="reports-filter-label">FILTERS</span>
+          <select id="rpt-agency" onchange="loadReports()">
+            <option value="">All Agencies</option>
+            <option value="Found">Found</option>
+            <option value="SEED">SEED</option>
+            <option value="Braidr">Braidr</option>
+            <option value="Disrupt">Disrupt</option>
+            <option value="Culture3">Culture3</option>
+          </select>
+          <select id="rpt-module" onchange="loadReports()">
+            <option value="">All Modules</option>
+            <option value="linkedin">LinkedIn</option>
+            <option value="industry">Industry</option>
+            <option value="website">Website</option>
+            <option value="diff">DIFF</option>
+            <option value="registry">Registry</option>
+          </select>
+          <select id="rpt-cadence" onchange="loadReports()">
+            <option value="">All Cadences</option>
+            <option value="daily">Daily</option>
+            <option value="weekly">Weekly</option>
+            <option value="monthly">Monthly</option>
+          </select>
+          <input type="text" id="rpt-search" placeholder="Search reports..." oninput="debounceReportSearch()">
+        </div>
+        <div class="reports-list" id="reports-list">
+          <div class="reports-empty">Select filters or search to browse reports</div>
+        </div>
+        <div class="reports-pagination" id="reports-pagination" style="display:none">
+          <button class="reports-page-btn" id="rpt-prev" onclick="loadReports(reportsPage-1)">&lt; PREV</button>
+          <span class="reports-page-info" id="rpt-page-info">Page 1</span>
+          <button class="reports-page-btn" id="rpt-next" onclick="loadReports(reportsPage+1)">NEXT &gt;</button>
+        </div>
+      </div>
     </div>
 
     <!-- ═══ ALERTS PANEL ═══ -->
@@ -585,6 +809,12 @@ let isStreaming = false;
 let deepThink = false;
 let totalTokens = { input: 0, output: 0, cached: 0, tools: 0 };
 let dashData = null;
+let currentUser = null; // {name, agency, user_id}
+let currentConversationId = null;
+let conversations = [];
+let reportsPage = 1;
+let reportsTotal = 0;
+let reportSearchTimer = null;
 
 marked.setOptions({ breaks: true, gfm: true });
 
@@ -595,10 +825,25 @@ function switchPanel(name, btn) {
   document.getElementById('panel-' + name).classList.add('active');
   if (btn) btn.classList.add('active');
   if (name === 'chat') document.getElementById('input')?.focus();
+  if (name === 'reports') loadReports(1);
 }
 
 // ═══════════ INIT ═══════════
 async function init() {
+  // Check for existing user in localStorage
+  const stored = localStorage.getItem('mcsa_user');
+  if (stored) {
+    try {
+      currentUser = JSON.parse(stored);
+      showLoggedIn();
+    } catch(e) { localStorage.removeItem('mcsa_user'); }
+  }
+  if (!currentUser) {
+    document.getElementById('login-overlay').classList.remove('hidden');
+  } else {
+    document.getElementById('login-overlay').classList.add('hidden');
+  }
+
   try {
     const [agenciesRes, dashRes] = await Promise.all([
       fetch('/api/agencies').then(r => r.json()),
@@ -620,6 +865,9 @@ async function init() {
   } catch (e) {
     console.error('Init failed:', e);
   }
+
+  // Load conversations if user is logged in
+  if (currentUser) { loadConversations(); }
 }
 
 // ═══════════ DASHBOARD RENDERING ═══════════
@@ -806,6 +1054,7 @@ function toggleThink() {
 
 function newChat() {
   chatHistory = [];
+  currentConversationId = null;
   totalTokens = { input: 0, output: 0, cached: 0, tools: 0 };
   document.getElementById('messages').innerHTML = `
     <div class="welcome" id="welcome">
@@ -814,6 +1063,7 @@ function newChat() {
       <p style="font-size:0.8rem;color:var(--text-dim);max-width:400px;line-height:1.5">New conversation started.</p>
     </div>`;
   updateTokenHint();
+  renderConversationList();
 }
 
 async function exportChat() {
@@ -932,6 +1182,7 @@ async function sendMessage() {
       }
     }
     chatHistory.push({ role: 'assistant', content: fullText });
+    saveConversation(message, fullText);
     setTimeout(() => {
       document.querySelectorAll('._temp-tool').forEach(el => { el.classList.add('fade-out'); setTimeout(() => el.remove(), 500); });
     }, 800);
@@ -949,6 +1200,210 @@ async function sendMessage() {
 
 function scrollBottom() { const m = document.getElementById('messages'); m.scrollTop = m.scrollHeight; }
 function escHtml(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+// ═══════════ USER LOGIN ═══════════
+async function loginUser() {
+  const name = document.getElementById('login-name').value.trim();
+  const agency = document.getElementById('login-agency').value;
+  if (!name) { document.getElementById('login-name').style.borderColor = 'var(--red)'; return; }
+  try {
+    const res = await fetch('/api/users/login', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ name, agency })
+    });
+    const data = await res.json();
+    currentUser = { name: data.name || name, agency: data.agency || agency, user_id: data.user_id || name.toLowerCase().replace(/\s+/g,'_') + '_' + agency.toLowerCase() };
+  } catch(e) {
+    currentUser = { name, agency, user_id: name.toLowerCase().replace(/\s+/g,'_') + '_' + agency.toLowerCase() };
+  }
+  localStorage.setItem('mcsa_user', JSON.stringify(currentUser));
+  showLoggedIn();
+  document.getElementById('login-overlay').classList.add('hidden');
+  loadConversations();
+}
+
+function showLoggedIn() {
+  if (!currentUser) return;
+  document.getElementById('nav-user').style.display = 'block';
+  document.getElementById('nav-user-name').textContent = currentUser.name;
+  document.getElementById('nav-user-agency').textContent = currentUser.agency.toUpperCase();
+}
+
+function switchUser() {
+  localStorage.removeItem('mcsa_user');
+  currentUser = null;
+  currentConversationId = null;
+  conversations = [];
+  document.getElementById('nav-user').style.display = 'none';
+  document.getElementById('login-name').value = '';
+  document.getElementById('login-name').style.borderColor = '';
+  document.getElementById('login-overlay').classList.remove('hidden');
+  renderConversationList();
+}
+
+// ═══════════ CONVERSATION HISTORY ═══════════
+async function loadConversations() {
+  if (!currentUser) return;
+  try {
+    const res = await fetch(`/api/conversations?user_id=${encodeURIComponent(currentUser.user_id)}`);
+    const data = await res.json();
+    conversations = data.conversations || [];
+  } catch(e) {
+    conversations = [];
+  }
+  renderConversationList();
+}
+
+function renderConversationList() {
+  const list = document.getElementById('conv-list');
+  if (!list) return;
+  if (!conversations.length) {
+    list.innerHTML = '<div style="padding:16px 12px;color:var(--text-dim);font-size:0.7rem;text-align:center;font-family:\'Share Tech Mono\',monospace">No conversations yet</div>';
+    return;
+  }
+  list.innerHTML = conversations.map(c => {
+    const isActive = c.id === currentConversationId;
+    const title = escHtml(c.title || 'Untitled');
+    const date = (c.updated_at || c.created_at || '').slice(0, 10);
+    const count = c.message_count || 0;
+    return `<div class="conv-item${isActive ? ' active' : ''}" onclick="loadConversation('${c.id}')">
+      <div class="conv-item-title">${title}</div>
+      <div class="conv-item-meta">
+        <span>${date}</span>
+        <span class="conv-item-badge">${count} msg</span>
+      </div>
+      <button class="conv-item-delete" onclick="event.stopPropagation();deleteConversation('${c.id}')" title="Delete">&times;</button>
+    </div>`;
+  }).join('');
+}
+
+async function loadConversation(id) {
+  try {
+    const res = await fetch(`/api/conversations/${id}`);
+    const data = await res.json();
+    currentConversationId = id;
+    chatHistory = data.messages || [];
+    totalTokens = { input: 0, output: 0, cached: 0, tools: 0 };
+    const msgs = document.getElementById('messages');
+    msgs.innerHTML = '';
+    for (const m of chatHistory) {
+      const div = document.createElement('div');
+      div.className = 'msg ' + m.role;
+      div.innerHTML = `<div class="msg-label">${m.role === 'user' ? 'YOU' : 'MCSA'}</div><div class="msg-body">${m.role === 'user' ? escHtml(m.content) : marked.parse(m.content)}</div>`;
+      msgs.appendChild(div);
+    }
+    scrollBottom();
+    renderConversationList();
+    switchPanel('chat', document.querySelector('[data-panel="chat"]'));
+  } catch(e) {
+    console.error('Load conversation failed:', e);
+  }
+}
+
+async function saveConversation(userMessage, assistantMessage) {
+  if (!currentUser) return;
+  try {
+    const res = await fetch('/api/conversations/save', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        conversation_id: currentConversationId,
+        user_id: currentUser.user_id,
+        user_name: currentUser.name,
+        agency_filter: selectedAgency,
+        user_message: userMessage,
+        assistant_message: assistantMessage
+      })
+    });
+    const data = await res.json();
+    if (data.conversation_id) { currentConversationId = data.conversation_id; }
+    loadConversations();
+  } catch(e) {
+    console.error('Save conversation failed:', e);
+  }
+}
+
+async function deleteConversation(id) {
+  try {
+    await fetch(`/api/conversations/${id}`, { method: 'DELETE' });
+    if (currentConversationId === id) { newChat(); }
+    loadConversations();
+  } catch(e) {
+    console.error('Delete conversation failed:', e);
+  }
+}
+
+// ═══════════ REPORTS BROWSER ═══════════
+function debounceReportSearch() {
+  clearTimeout(reportSearchTimer);
+  reportSearchTimer = setTimeout(() => loadReports(1), 300);
+}
+
+async function loadReports(page) {
+  if (page === undefined) page = 1;
+  reportsPage = Math.max(1, page);
+  const agency = document.getElementById('rpt-agency').value;
+  const module = document.getElementById('rpt-module').value;
+  const cadence = document.getElementById('rpt-cadence').value;
+  const search = document.getElementById('rpt-search').value.trim();
+
+  const params = new URLSearchParams({ page: reportsPage, per_page: 20 });
+  if (agency) params.set('agency', agency);
+  if (module) params.set('module', module);
+  if (cadence) params.set('cadence', cadence);
+  if (search) params.set('search', search);
+
+  const list = document.getElementById('reports-list');
+  list.innerHTML = '<div class="reports-empty">Loading reports...</div>';
+
+  try {
+    const res = await fetch(`/api/reports?${params}`);
+    const data = await res.json();
+    const reports = data.reports || [];
+    reportsTotal = data.total || 0;
+    const totalPages = Math.ceil(reportsTotal / 20) || 1;
+
+    if (!reports.length) {
+      list.innerHTML = '<div class="reports-empty">No reports found matching your filters</div>';
+      document.getElementById('reports-pagination').style.display = 'none';
+      return;
+    }
+
+    list.innerHTML = reports.map((r, i) => {
+      const preview = escHtml((r.content || '').slice(0, 150)) + ((r.content||'').length > 150 ? '...' : '');
+      const date = (r.date || r.created_at || '').slice(0, 16);
+      const mod = (r.module || '').toLowerCase();
+      return `<div class="report-card" id="rpt-card-${i}" onclick="toggleReportCard(${i})">
+        <div class="report-card-header">
+          <span class="report-card-agency">${escHtml(r.agency || '')}</span>
+          <span class="report-card-module ${mod}">${(r.module||'').toUpperCase()}</span>
+          <span class="report-card-cadence">${(r.cadence||'').toUpperCase()}</span>
+          <span class="report-card-date">${date}</span>
+        </div>
+        <div class="report-card-preview">${preview}</div>
+        <div class="report-card-body"><div class="msg-body">${marked.parse(r.content || '')}</div></div>
+      </div>`;
+    }).join('');
+
+    // Pagination
+    const pag = document.getElementById('reports-pagination');
+    if (totalPages > 1) {
+      pag.style.display = 'flex';
+      document.getElementById('rpt-prev').disabled = reportsPage <= 1;
+      document.getElementById('rpt-next').disabled = reportsPage >= totalPages;
+      document.getElementById('rpt-page-info').textContent = `Page ${reportsPage} of ${totalPages} (${reportsTotal} reports)`;
+    } else {
+      pag.style.display = 'none';
+    }
+  } catch(e) {
+    list.innerHTML = '<div class="reports-empty">Failed to load reports</div>';
+    console.error('Load reports failed:', e);
+  }
+}
+
+function toggleReportCard(idx) {
+  const card = document.getElementById('rpt-card-' + idx);
+  if (card) card.classList.toggle('expanded');
+}
 
 init();
 </script>
