@@ -38,6 +38,10 @@ claude = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 
 app = FastAPI(title="MCSA Chat")
 
+# Mount Slack slash command handler
+from .slack_handler import router as slack_router
+app.include_router(slack_router)
+
 TEMPLATE_DIR = Path(__file__).parent / "templates"
 
 # ---------------------------------------------------------------------------
@@ -139,6 +143,36 @@ TOOLS = [
             "required": ["module"],
         },
     },
+    {
+        "name": "get_alerts",
+        "description": (
+            "Get recent alerts and trend signals detected by the MCSA alert engine. "
+            "Filter by agency, severity (high/medium/low), or alert type."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "agency": {
+                    "type": "string",
+                    "description": "Agency name to filter by.",
+                },
+                "severity": {
+                    "type": "string",
+                    "enum": ["high", "medium", "low"],
+                    "description": "Filter by alert severity.",
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Max alerts to return. Default 10.",
+                },
+                "unacknowledged_only": {
+                    "type": "boolean",
+                    "description": "Only show unacknowledged alerts.",
+                },
+            },
+            "required": [],
+        },
+    },
 ]
 
 
@@ -157,6 +191,8 @@ def _execute_tool(name: str, input_data: dict) -> str:
             return _tool_get_run_history(input_data)
         elif name == "compare_agencies":
             return _tool_compare_agencies(input_data)
+        elif name == "get_alerts":
+            return _tool_get_alerts(input_data)
         else:
             return f"Unknown tool: {name}"
     except Exception as e:
@@ -257,6 +293,31 @@ def _tool_compare_agencies(params: dict) -> str:
             parts.append(f"### {agency} — no {module} reports found")
 
     return "\n\n---\n\n".join(parts)
+
+
+def _tool_get_alerts(params: dict) -> str:
+    limit = min(params.get("limit", 10), 30)
+    query = sb.table("alerts").select("*").order("created_at", desc=True).limit(limit)
+    if params.get("agency"):
+        query = query.eq("agency_name", params["agency"])
+    if params.get("severity"):
+        query = query.eq("severity", params["severity"])
+    if params.get("unacknowledged_only"):
+        query = query.eq("acknowledged", False)
+    rows = query.execute()
+    if not rows.data:
+        return "No alerts found."
+    severity_icon = {"high": "RED", "medium": "ORANGE", "low": "WHITE"}
+    parts = []
+    for r in rows.data:
+        icon = severity_icon.get(r["severity"], "?")
+        parts.append(
+            f"[{icon}] {r['title']}\n"
+            f"  Agency: {r['agency_name']} | Type: {r['alert_type']} | "
+            f"Severity: {r['severity']} | Date: {r['created_at'][:16]}\n"
+            f"  {r['detail']}"
+        )
+    return f"{len(parts)} alert(s):\n\n" + "\n\n".join(parts)
 
 
 # ---------------------------------------------------------------------------

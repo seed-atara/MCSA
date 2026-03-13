@@ -1,6 +1,8 @@
 """MCSA-specific configuration — agencies, cadences, output channels."""
 from __future__ import annotations
 
+import os
+
 from core.config import (  # noqa: F401
     ANTHROPIC_API_KEY,
     TAVILY_API_KEY,
@@ -8,6 +10,8 @@ from core.config import (  # noqa: F401
     MODEL,
     MAX_TOKENS,
     OUTPUT_DIR,
+    SLACK_MCSA_WEBHOOK_URL,
+    SLACK_MCSA_ENABLED,
     get_research_profile,
     validate_config,
 )
@@ -82,6 +86,25 @@ AGENCIES: list[dict] = [
 
 # Tomorrow Group sibling agencies — never list these as competitors
 SIBLING_AGENCIES = {"Found", "SEED", "Braidr", "Disrupt", "Culture3", "Tomorrow Group"}
+
+# ---------------------------------------------------------------------------
+# Slack webhook routing — per-agency channels (Option A from roadmap)
+# ---------------------------------------------------------------------------
+# Each agency can have its own webhook URL (for a dedicated channel like #mcsa-found).
+# Falls back to SLACK_MCSA_WEBHOOK_URL if no per-agency URL is set.
+# Env var pattern: SLACK_MCSA_WEBHOOK_URL_<AGENCY_UPPER> e.g. SLACK_MCSA_WEBHOOK_URL_FOUND
+SLACK_AGENCY_WEBHOOKS: dict[str, str | None] = {
+    agency["name"]: os.getenv(f"SLACK_MCSA_WEBHOOK_URL_{agency['name'].upper()}")
+    for agency in AGENCIES
+}
+
+# Alerts channel — separate webhook for high-priority alerts (Phase 2)
+SLACK_MCSA_WEBHOOK_URL_ALERTS = os.getenv("SLACK_MCSA_WEBHOOK_URL_ALERTS")
+
+
+def get_slack_webhook(agency_name: str) -> str | None:
+    """Return the Slack webhook URL for an agency, falling back to the default."""
+    return SLACK_AGENCY_WEBHOOKS.get(agency_name) or SLACK_MCSA_WEBHOOK_URL
 
 # ---------------------------------------------------------------------------
 # Reporting cadences

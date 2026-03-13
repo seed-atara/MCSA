@@ -25,6 +25,10 @@ FIRECRAWL_API_KEY = os.getenv("FIRECRAWL_API_KEY")
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
 
+# Slack (MCSA report delivery)
+SLACK_MCSA_WEBHOOK_URL = os.getenv("SLACK_MCSA_WEBHOOK_URL")  # default/fallback channel
+SLACK_MCSA_ENABLED = os.getenv("SLACK_MCSA_ENABLED", "false").lower() == "true"
+
 # ---------------------------------------------------------------------------
 # Model settings
 # ---------------------------------------------------------------------------

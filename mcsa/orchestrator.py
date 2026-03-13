@@ -21,6 +21,8 @@ from .config import AGENCIES, REPORTS, CADENCE_DAILY, CADENCE_WEEKLY, CADENCE_MO
 from .agents import RegistryAgent, LinkedInAgent, IndustryAgent, DIFFAgent, WebsiteAgent
 from . import storage
 from . import formatter
+from .slack import deliver_to_slack
+from .alerts import run_alert_detection
 
 console = Console()
 
@@ -85,6 +87,14 @@ class MCSAOrchestrator:
 
             agency_results = await self.run_agency(agency, self.cadence)
             self.results[agency_name] = agency_results
+
+            # Phase 2: Alert detection — compare against history
+            try:
+                await run_alert_detection(
+                    agency_name, self.cadence, agency_results, self.registries
+                )
+            except Exception as e:
+                console.print(f"[yellow]  Alert detection failed for {agency_name}: {e}[/yellow]")
 
         # Save run log
         duration = time.time() - start_time
@@ -249,9 +259,8 @@ class MCSAOrchestrator:
 
 
 def _save_formatted(agency_name: str, module: str, cadence: str, report: str, raw_path: Path) -> None:
-    """Save Slack and Confluence formatted versions alongside the raw report."""
-    report_dir = raw_path.parent
-
+    """Save Slack and Confluence formatted versions alongside the raw report,
+    then deliver to Slack if enabled."""
     # Slack version
     if cadence == CADENCE_DAILY:
         slack_content = formatter.format_slack_daily(agency_name, module, report)
@@ -259,6 +268,9 @@ def _save_formatted(agency_name: str, module: str, cadence: str, report: str, ra
         slack_content = formatter.format_slack_summary(agency_name, module, report)
     slack_path = raw_path.with_suffix(".slack.md")
     slack_path.write_text(slack_content, encoding="utf-8")
+
+    # Deliver to Slack
+    deliver_to_slack(agency_name, module, cadence, slack_content)
 
     # Confluence version (for weekly and monthly)
     if cadence in (CADENCE_WEEKLY, CADENCE_MONTHLY):
