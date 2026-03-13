@@ -22,6 +22,7 @@ from .agents import RegistryAgent, LinkedInAgent, IndustryAgent, DIFFAgent, Webs
 from . import storage
 from . import formatter
 from .slack import deliver_to_slack
+from .confluence_delivery import deliver_to_confluence
 from .alerts import run_alert_detection
 from .watchlist import check_watchlist_matches, deliver_watchlist_alerts
 
@@ -286,6 +287,12 @@ def _save_formatted(agency_name: str, module: str, cadence: str, report: str, ra
         conf_content = formatter.format_confluence(agency_name, module, cadence, report)
         conf_path = raw_path.with_suffix(".confluence.md")
         conf_path.write_text(conf_content, encoding="utf-8")
+
+        # Deliver to Confluence
+        try:
+            deliver_to_confluence(agency_name, module, cadence, conf_content)
+        except Exception as e:
+            console.print(f"[yellow]  Confluence delivery failed: {e}[/yellow]")
 
 
 def _save_website_snapshots(agency_name: str, web_ctx: dict, competitors: list[dict]) -> None:

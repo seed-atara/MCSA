@@ -478,4 +478,8 @@ async def run_alert_detection(
     # Deliver to Slack
     deliver_alerts_to_slack(alerts)
 
+    # Email delivery (gracefully skips if RESEND_API_KEY not set)
+    from .email_delivery import send_alert_email
+    send_alert_email(alerts)
+
     return alerts

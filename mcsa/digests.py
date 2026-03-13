@@ -374,4 +374,8 @@ async def run_digest(digest_type: str) -> str:
 
     deliver_digest(digest_type, digest)
 
+    # Email delivery (gracefully skips if RESEND_API_KEY not set)
+    from .email_delivery import send_digest_email
+    send_digest_email(digest_type, digest)
+
     return digest

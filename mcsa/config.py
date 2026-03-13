@@ -12,6 +12,12 @@ from core.config import (  # noqa: F401
     OUTPUT_DIR,
     SLACK_MCSA_WEBHOOK_URL,
     SLACK_MCSA_ENABLED,
+    CONFLUENCE_URL,
+    CONFLUENCE_USER,
+    CONFLUENCE_API_TOKEN,
+    CONFLUENCE_SPACE_KEY,
+    CONFLUENCE_PARENT_PAGE_ID,
+    CONFLUENCE_ENABLED,
     get_research_profile,
     validate_config,
 )

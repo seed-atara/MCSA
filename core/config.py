@@ -29,6 +29,16 @@ SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
 SLACK_MCSA_WEBHOOK_URL = os.getenv("SLACK_MCSA_WEBHOOK_URL")  # default/fallback channel
 SLACK_MCSA_ENABLED = os.getenv("SLACK_MCSA_ENABLED", "false").lower() == "true"
 
+# Confluence (MCSA report delivery)
+CONFLUENCE_URL = os.getenv("CONFLUENCE_URL")  # e.g. https://yoursite.atlassian.net
+CONFLUENCE_USER = os.getenv("CONFLUENCE_USER")  # e.g. user@company.com
+CONFLUENCE_API_TOKEN = os.getenv("CONFLUENCE_API_TOKEN")
+CONFLUENCE_SPACE_KEY = os.getenv("CONFLUENCE_SPACE_KEY")
+CONFLUENCE_PARENT_PAGE_ID = os.getenv("CONFLUENCE_PARENT_PAGE_ID")
+CONFLUENCE_ENABLED = bool(
+    CONFLUENCE_URL and CONFLUENCE_USER and CONFLUENCE_API_TOKEN and CONFLUENCE_SPACE_KEY
+)
+
 # ---------------------------------------------------------------------------
 # Model settings
 # ---------------------------------------------------------------------------
