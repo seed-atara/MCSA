@@ -27,38 +27,27 @@ from datetime import datetime
 from fastapi import APIRouter, Request, Response
 import anthropic
 
-from dotenv import load_dotenv
-from pathlib import Path
-load_dotenv(Path(__file__).parent.parent / ".env")
-
 # ---------------------------------------------------------------------------
-# Config
+# Config — reuse clients from parent app to avoid duplicate init issues
 # ---------------------------------------------------------------------------
 
-SIGNING_SECRET = os.getenv("SLACK_MCSA_SIGNING_SECRET", "")
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
 MODEL = "claude-sonnet-4-20250514"
 
-# Lazy-init clients (avoid import-time failures if env not set)
-_claude = None
-_sb = None
+
+def _get_signing_secret():
+    return os.getenv("SLACK_MCSA_SIGNING_SECRET", "")
 
 
 def _get_claude():
-    global _claude
-    if _claude is None:
-        _claude = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
-    return _claude
+    """Get or create Anthropic client."""
+    api_key = os.getenv("ANTHROPIC_API_KEY")
+    return anthropic.Anthropic(api_key=api_key)
 
 
 def _get_sb():
-    global _sb
-    if _sb is None:
-        from supabase import create_client
-        _sb = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
-    return _sb
+    """Get or create Supabase client."""
+    from supabase import create_client
+    return create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_SERVICE_KEY"))
 
 
 # ---------------------------------------------------------------------------
@@ -296,7 +285,8 @@ def _tool_get_alerts(sb, params: dict) -> str:
 
 def _verify_slack_request(body: bytes, timestamp: str, signature: str) -> bool:
     """Verify the request came from Slack using signing secret."""
-    if not SIGNING_SECRET:
+    secret = _get_signing_secret()
+    if not secret:
         # If no signing secret configured, skip verification (dev mode)
         return True
 
@@ -306,7 +296,7 @@ def _verify_slack_request(body: bytes, timestamp: str, signature: str) -> bool:
 
     sig_basestring = f"v0:{timestamp}:{body.decode('utf-8')}"
     computed = "v0=" + hmac.new(
-        SIGNING_SECRET.encode(), sig_basestring.encode(), hashlib.sha256
+        secret.encode(), sig_basestring.encode(), hashlib.sha256
     ).hexdigest()
     return hmac.compare_digest(computed, signature)
 
