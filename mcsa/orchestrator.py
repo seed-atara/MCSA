@@ -23,6 +23,7 @@ from . import storage
 from . import formatter
 from .slack import deliver_to_slack
 from .alerts import run_alert_detection
+from .watchlist import check_watchlist_matches, deliver_watchlist_alerts
 
 console = Console()
 
@@ -95,6 +96,14 @@ class MCSAOrchestrator:
                 )
             except Exception as e:
                 console.print(f"[yellow]  Alert detection failed for {agency_name}: {e}[/yellow]")
+
+            # Phase 3c: Watchlist — check reports against user-defined watches
+            try:
+                matches = check_watchlist_matches(agency_name, agency_results)
+                if matches:
+                    deliver_watchlist_alerts(matches)
+            except Exception as e:
+                console.print(f"[yellow]  Watchlist check failed for {agency_name}: {e}[/yellow]")
 
         # Save run log
         duration = time.time() - start_time

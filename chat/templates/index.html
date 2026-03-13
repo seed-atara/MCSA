@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>MCSA // Intelligence Terminal</title>
+<title>MCSA // Intelligence Command</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;700;900&family=Share+Tech+Mono&family=Rajdhani:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
@@ -15,13 +15,17 @@
   --cyan-dim: #00f0ff44;
   --cyan-glow: #00f0ff88;
   --cyan-ultra-dim: #00f0ff15;
+  --cyan-bg: #00f0ff08;
   --magenta: #ff00aa;
   --magenta-dim: #ff00aa44;
   --orange: #ff6a00;
   --orange-dim: #ff6a0044;
-  --grid-color: #00f0ff08;
+  --red: #ff003c;
+  --red-dim: #ff003c33;
+  --grid-color: #00f0ff06;
   --bg-deep: #06060e;
   --bg-panel: #0a0a16;
+  --bg-card: #0c0c1a;
   --bg-input: #080810;
   --bg-hover: #0e0e1c;
   --text-primary: #d8e0f8;
@@ -33,832 +37,308 @@
   --warning: #ffaa00;
 }
 
-html, body {
-  height: 100%;
-  background: var(--bg-deep);
-  color: var(--text-primary);
-  font-family: 'Rajdhani', sans-serif;
-  font-size: 15px;
-  overflow: hidden;
-}
+html, body { height: 100%; background: var(--bg-deep); color: var(--text-primary); font-family: 'Rajdhani', sans-serif; font-size: 14px; overflow: hidden; }
 
 /* Scanlines */
-body::after {
-  content: '';
-  position: fixed;
-  inset: 0;
-  background: repeating-linear-gradient(
-    0deg, transparent, transparent 2px,
-    rgba(0, 240, 255, 0.006) 2px, rgba(0, 240, 255, 0.006) 4px
-  );
-  pointer-events: none;
-  z-index: 9999;
-}
+body::after { content: ''; position: fixed; inset: 0; background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,240,255,0.005) 2px, rgba(0,240,255,0.005) 4px); pointer-events: none; z-index: 9999; }
 
 /* Grid */
-body::before {
-  content: '';
-  position: fixed;
-  inset: 0;
-  background:
-    linear-gradient(var(--grid-color) 1px, transparent 1px),
-    linear-gradient(90deg, var(--grid-color) 1px, transparent 1px);
-  background-size: 60px 60px;
-  pointer-events: none;
-  z-index: 0;
-  animation: grid-drift 120s linear infinite;
-}
+body::before { content: ''; position: fixed; inset: 0; background: linear-gradient(var(--grid-color) 1px, transparent 1px), linear-gradient(90deg, var(--grid-color) 1px, transparent 1px); background-size: 50px 50px; pointer-events: none; z-index: 0; animation: grid-drift 120s linear infinite; }
+@keyframes grid-drift { 0% { background-position: 0 0; } 100% { background-position: 50px 50px; } }
 
-@keyframes grid-drift {
-  0% { background-position: 0 0; }
-  100% { background-position: 60px 60px; }
-}
-
-/* Corner decorations */
-.corner { position: fixed; width: 50px; height: 50px; z-index: 2; pointer-events: none; }
+/* Corner deco */
+.corner { position: fixed; width: 40px; height: 40px; z-index: 2; pointer-events: none; }
 .corner-tl { top: 0; left: 0; border-top: 1px solid var(--cyan-dim); border-left: 1px solid var(--cyan-dim); }
 .corner-tr { top: 0; right: 0; border-top: 1px solid var(--cyan-dim); border-right: 1px solid var(--cyan-dim); }
 .corner-bl { bottom: 0; left: 0; border-bottom: 1px solid var(--magenta-dim); border-left: 1px solid var(--magenta-dim); }
 .corner-br { bottom: 0; right: 0; border-bottom: 1px solid var(--magenta-dim); border-right: 1px solid var(--magenta-dim); }
 
-/* ═══════════ LAYOUT ═══════════ */
-.app {
-  display: flex;
-  height: 100vh;
-  position: relative;
-  z-index: 1;
-}
+/* ═══════════ APP LAYOUT ═══════════ */
+.app { display: flex; height: 100vh; position: relative; z-index: 1; }
 
-/* ═══════════ SIDEBAR ═══════════ */
-.sidebar {
-  width: 320px;
-  min-width: 320px;
+/* ═══════════ LEFT NAV ═══════════ */
+.nav {
+  width: 220px; min-width: 220px;
   background: var(--bg-panel);
   border-right: 1px solid var(--border);
-  display: flex;
-  flex-direction: column;
-  position: relative;
-  overflow: hidden;
+  display: flex; flex-direction: column;
+  position: relative; overflow: hidden;
 }
+.nav::after { content: ''; position: absolute; top: 0; right: 0; width: 1px; height: 100%; background: linear-gradient(180deg, var(--cyan) 0%, transparent 40%, transparent 60%, var(--magenta) 100%); opacity: 0.3; }
 
-.sidebar::after {
-  content: '';
-  position: absolute;
-  top: 0;
-  right: 0;
-  width: 1px;
-  height: 100%;
-  background: linear-gradient(180deg, var(--cyan) 0%, transparent 40%, transparent 60%, var(--magenta) 100%);
-  opacity: 0.3;
+.logo-section { padding: 16px 16px; border-bottom: 1px solid var(--border); position: relative; }
+.logo-section::after { content: ''; position: absolute; bottom: 0; left: 10%; width: 80%; height: 1px; background: linear-gradient(90deg, transparent, var(--cyan-dim), transparent); }
+.logo { font-family: 'Orbitron', sans-serif; font-weight: 900; font-size: 1.5rem; letter-spacing: 0.2em; color: var(--cyan); text-shadow: 0 0 20px var(--cyan-dim); line-height: 1; }
+.logo-sub { font-family: 'Share Tech Mono', monospace; font-size: 0.65rem; color: var(--text-dim); letter-spacing: 0.3em; margin-top: 6px; text-transform: uppercase; }
+
+/* Nav items */
+.nav-items { flex: 1; padding: 10px 8px; display: flex; flex-direction: column; gap: 2px; }
+.nav-btn {
+  background: transparent; border: 1px solid transparent; color: var(--text-dim);
+  font-family: 'Rajdhani', sans-serif; font-size: 0.9rem; font-weight: 500;
+  padding: 10px 12px; text-align: left; cursor: pointer; border-radius: 3px;
+  transition: all 0.15s; letter-spacing: 0.06em; position: relative;
+  display: flex; align-items: center; gap: 10px;
 }
+.nav-btn:hover { background: var(--cyan-ultra-dim); border-color: var(--cyan-dim); color: var(--text-primary); }
+.nav-btn.active { background: rgba(0,240,255,0.07); border-color: var(--cyan); color: var(--cyan); }
+.nav-btn.active::before { content: ''; position: absolute; left: 0; top: 20%; height: 60%; width: 2px; background: var(--cyan); box-shadow: 0 0 6px var(--cyan); }
+.nav-btn svg { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 1.5; flex-shrink: 0; }
+.nav-badge { margin-left: auto; background: var(--red); color: #fff; font-family: 'Share Tech Mono', monospace; font-size: 0.65rem; padding: 1px 6px; border-radius: 2px; }
 
-.logo-section {
-  padding: 22px 20px;
-  border-bottom: 1px solid var(--border);
-  position: relative;
+.nav-section { font-family: 'Orbitron', sans-serif; font-size: 0.6rem; letter-spacing: 0.25em; color: var(--text-dim); text-transform: uppercase; padding: 14px 12px 6px; }
+
+/* Agency filter in nav */
+.agency-pills { padding: 6px 8px; display: flex; flex-wrap: wrap; gap: 4px; }
+.agency-pill {
+  background: transparent; border: 1px solid var(--border); color: var(--text-dim);
+  font-family: 'Share Tech Mono', monospace; font-size: 0.65rem; padding: 3px 8px;
+  border-radius: 2px; cursor: pointer; transition: all 0.15s;
 }
+.agency-pill:hover { border-color: var(--cyan-dim); color: var(--text-primary); }
+.agency-pill.active { border-color: var(--cyan); color: var(--cyan); background: rgba(0,240,255,0.07); }
 
-.logo-section::after {
-  content: '';
-  position: absolute;
-  bottom: 0;
-  left: 10%;
-  width: 80%;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, var(--cyan-dim), transparent);
+.nav-footer { padding: 12px 16px; border-top: 1px solid var(--border); font-family: 'Share Tech Mono', monospace; font-size: 0.65rem; color: var(--text-dim); text-align: center; letter-spacing: 0.15em; }
+
+/* ═══════════ MAIN CONTENT ═══════════ */
+.content { flex: 1; display: flex; flex-direction: column; min-width: 0; overflow: hidden; }
+
+/* Tab panels */
+.panel { display: none; flex: 1; overflow: hidden; }
+.panel.active { display: flex; flex-direction: column; }
+
+/* ═══════════ DASHBOARD ═══════════ */
+.dash { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 16px; }
+.dash::-webkit-scrollbar { width: 3px; }
+.dash::-webkit-scrollbar-track { background: transparent; }
+.dash::-webkit-scrollbar-thumb { background: var(--border-light); border-radius: 2px; }
+
+/* Stat cards row */
+.stat-row { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; }
+.stat-card {
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: 4px;
+  padding: 14px 16px; position: relative; overflow: hidden;
 }
+.stat-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; }
+.stat-card.cyan::before { background: linear-gradient(90deg, var(--cyan), transparent); }
+.stat-card.magenta::before { background: linear-gradient(90deg, var(--magenta), transparent); }
+.stat-card.orange::before { background: linear-gradient(90deg, var(--orange), transparent); }
+.stat-card.green::before { background: linear-gradient(90deg, var(--success), transparent); }
+.stat-card.red::before { background: linear-gradient(90deg, var(--red), transparent); }
+.stat-card.warn::before { background: linear-gradient(90deg, var(--warning), transparent); }
 
-.logo {
-  font-family: 'Orbitron', sans-serif;
-  font-weight: 900;
-  font-size: 1.75rem;
-  letter-spacing: 0.2em;
-  color: var(--cyan);
-  text-shadow: 0 0 20px var(--cyan-dim), 0 0 40px rgba(0, 240, 255, 0.08);
-  line-height: 1;
+.stat-label { font-family: 'Share Tech Mono', monospace; font-size: 0.65rem; color: var(--text-dim); letter-spacing: 0.15em; text-transform: uppercase; margin-bottom: 6px; }
+.stat-value { font-family: 'Orbitron', sans-serif; font-size: 1.6rem; font-weight: 700; line-height: 1; }
+.stat-value.cyan { color: var(--cyan); text-shadow: 0 0 12px var(--cyan-dim); }
+.stat-value.magenta { color: var(--magenta); }
+.stat-value.orange { color: var(--orange); }
+.stat-value.green { color: var(--success); text-shadow: 0 0 12px rgba(0,255,136,0.2); }
+.stat-value.red { color: var(--red); }
+.stat-value.warn { color: var(--warning); }
+.stat-sub { font-family: 'Share Tech Mono', monospace; font-size: 0.65rem; color: var(--text-dim); margin-top: 4px; }
+
+/* Widget grid */
+.widget-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; flex: 1; min-height: 0; }
+.widget-grid-2 { display: grid; grid-template-columns: 2fr 1fr; gap: 12px; }
+
+.widget {
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: 4px;
+  display: flex; flex-direction: column; overflow: hidden; min-height: 200px;
 }
-
-.logo-sub {
-  font-family: 'Share Tech Mono', monospace;
-  font-size: 0.75rem;
-  color: var(--text-dim);
-  letter-spacing: 0.35em;
-  margin-top: 8px;
-  text-transform: uppercase;
+.widget-header {
+  padding: 10px 14px; border-bottom: 1px solid var(--border);
+  display: flex; justify-content: space-between; align-items: center;
+  background: rgba(0,240,255,0.02);
 }
+.widget-title { font-family: 'Orbitron', sans-serif; font-size: 0.68rem; letter-spacing: 0.2em; color: var(--text-dim); text-transform: uppercase; }
+.widget-badge { font-family: 'Share Tech Mono', monospace; font-size: 0.6rem; color: var(--cyan); }
+.widget-body { flex: 1; padding: 12px 14px; overflow-y: auto; }
+.widget-body::-webkit-scrollbar { width: 2px; }
+.widget-body::-webkit-scrollbar-thumb { background: var(--border-light); }
 
-/* Status panel */
-.status-bar {
-  padding: 14px 20px;
-  border-bottom: 1px solid var(--border);
-  font-family: 'Share Tech Mono', monospace;
-  font-size: 0.78rem;
+/* Alert feed */
+.alert-item {
+  display: flex; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--border);
+  animation: msg-in 0.3s ease-out;
 }
+.alert-item:last-child { border-bottom: none; }
+.alert-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; margin-top: 4px; }
+.alert-dot.high { background: var(--red); box-shadow: 0 0 8px var(--red-dim); }
+.alert-dot.medium { background: var(--orange); box-shadow: 0 0 8px var(--orange-dim); }
+.alert-dot.low { background: var(--text-dim); }
+.alert-content { flex: 1; min-width: 0; }
+.alert-title { font-size: 0.85rem; font-weight: 600; color: var(--text-primary); line-height: 1.3; }
+.alert-meta { font-family: 'Share Tech Mono', monospace; font-size: 0.6rem; color: var(--text-dim); margin-top: 2px; }
+.alert-detail { font-size: 0.75rem; color: var(--text-mid); margin-top: 3px; line-height: 1.4; }
 
-.status-row {
-  display: flex;
-  justify-content: space-between;
-  margin-bottom: 5px;
-  color: var(--text-dim);
+/* Agency health cards */
+.health-card {
+  background: rgba(0,240,255,0.02); border: 1px solid var(--border); border-radius: 3px;
+  padding: 10px 12px; margin-bottom: 8px;
 }
+.health-card:last-child { margin-bottom: 0; }
+.health-name { font-family: 'Orbitron', sans-serif; font-size: 0.75rem; font-weight: 500; color: var(--cyan); letter-spacing: 0.1em; }
+.health-stats { display: flex; gap: 16px; margin-top: 6px; font-family: 'Share Tech Mono', monospace; font-size: 0.65rem; color: var(--text-dim); }
+.health-stats .val { color: var(--text-primary); }
+.health-bar { height: 3px; background: var(--border); border-radius: 2px; margin-top: 6px; overflow: hidden; }
+.health-bar-fill { height: 100%; background: linear-gradient(90deg, var(--cyan), var(--magenta)); border-radius: 2px; transition: width 1s ease; }
 
-.status-row .val { color: var(--success); }
-.status-row .val-cyan { color: var(--cyan); }
-.status-row .val-warn { color: var(--warning); }
+/* Canvas chart styling */
+.chart-container { width: 100%; height: 100%; min-height: 120px; position: relative; }
+.chart-container canvas { width: 100% !important; height: 100% !important; }
 
-.status-dot {
-  display: inline-block;
-  width: 5px;
-  height: 5px;
-  background: var(--success);
-  border-radius: 50%;
-  margin-right: 6px;
-  box-shadow: 0 0 6px var(--success);
-  animation: pulse-dot 2s ease-in-out infinite;
-}
+/* Module distribution bars */
+.module-bar-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.module-bar-row:last-child { margin-bottom: 0; }
+.module-bar-label { font-family: 'Share Tech Mono', monospace; font-size: 0.65rem; color: var(--text-dim); width: 70px; text-transform: uppercase; }
+.module-bar-track { flex: 1; height: 18px; background: var(--border); border-radius: 2px; overflow: hidden; position: relative; }
+.module-bar-fill { height: 100%; border-radius: 2px; transition: width 1.5s ease; position: relative; }
+.module-bar-fill.linkedin { background: linear-gradient(90deg, #0077b5, #00a0dc); }
+.module-bar-fill.industry { background: linear-gradient(90deg, var(--orange), #ff9a44); }
+.module-bar-fill.website { background: linear-gradient(90deg, var(--magenta), #ff44cc); }
+.module-bar-fill.diff { background: linear-gradient(90deg, var(--cyan), #44ffee); }
+.module-bar-fill.registry { background: linear-gradient(90deg, var(--success), #44ff99); }
+.module-bar-count { font-family: 'Share Tech Mono', monospace; font-size: 0.65rem; color: var(--text-primary); width: 30px; text-align: right; }
 
-@keyframes pulse-dot {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.3; }
-}
+/* Severity ring (CSS-only) */
+.severity-ring { display: flex; align-items: center; justify-content: center; gap: 20px; padding: 10px; }
+.ring-chart { position: relative; width: 100px; height: 100px; }
+.ring-chart svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+.ring-chart circle { fill: none; stroke-width: 8; }
+.ring-center { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); text-align: center; }
+.ring-center .ring-num { font-family: 'Orbitron', sans-serif; font-size: 1.4rem; font-weight: 700; color: var(--text-primary); }
+.ring-center .ring-label { font-family: 'Share Tech Mono', monospace; font-size: 0.55rem; color: var(--text-dim); letter-spacing: 0.1em; }
+.ring-legend { display: flex; flex-direction: column; gap: 8px; }
+.ring-legend-item { display: flex; align-items: center; gap: 8px; font-family: 'Share Tech Mono', monospace; font-size: 0.7rem; color: var(--text-dim); }
+.ring-legend-dot { width: 10px; height: 10px; border-radius: 2px; }
 
-/* Agency filter */
-.section-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 10px;
-}
+/* Cost sparkline */
+.sparkline-row { display: flex; align-items: flex-end; gap: 3px; height: 60px; padding-top: 10px; }
+.spark-bar { flex: 1; background: linear-gradient(180deg, var(--cyan), var(--cyan-dim)); border-radius: 2px 2px 0 0; transition: height 1s ease; min-width: 4px; position: relative; }
+.spark-bar:hover { background: linear-gradient(180deg, var(--cyan), var(--cyan-glow)); }
+.spark-bar:hover::after { content: attr(data-tooltip); position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%); font-family: 'Share Tech Mono', monospace; font-size: 0.6rem; color: var(--cyan); white-space: nowrap; padding: 2px 4px; background: var(--bg-deep); border: 1px solid var(--border); border-radius: 2px; }
 
-.section-label {
-  font-family: 'Orbitron', sans-serif;
-  font-size: 0.68rem;
-  letter-spacing: 0.25em;
-  color: var(--text-dim);
-  text-transform: uppercase;
-}
-
-.agency-section {
-  padding: 14px 20px;
-  flex: 1;
-  overflow-y: auto;
-}
-
-.agency-list {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-
-.agency-btn {
-  background: transparent;
-  border: 1px solid transparent;
-  color: var(--text-dim);
-  font-family: 'Rajdhani', sans-serif;
-  font-size: 1rem;
-  font-weight: 500;
-  padding: 10px 14px;
-  text-align: left;
-  cursor: pointer;
-  border-radius: 3px;
-  transition: all 0.15s;
-  letter-spacing: 0.06em;
-  position: relative;
-}
-
-.agency-btn:hover {
-  background: var(--cyan-ultra-dim);
-  border-color: var(--cyan-dim);
-  color: var(--text-primary);
-}
-
-.agency-btn.active {
-  background: rgba(0, 240, 255, 0.07);
-  border-color: var(--cyan);
-  color: var(--cyan);
-  box-shadow: 0 0 12px rgba(0, 240, 255, 0.04);
-}
-
-.agency-btn.active::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 20%;
-  height: 60%;
-  width: 2px;
-  background: var(--cyan);
-  box-shadow: 0 0 6px var(--cyan);
-}
-
-/* Controls */
-.controls-section {
-  padding: 14px 20px;
-  border-top: 1px solid var(--border);
-}
-
-.toggle-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 8px 0;
-}
-
-.toggle-label {
-  font-family: 'Share Tech Mono', monospace;
-  font-size: 0.95rem;
-  color: var(--text-dim);
-  letter-spacing: 0.05em;
-}
-
-.toggle {
-  width: 36px;
-  height: 18px;
-  background: var(--border);
-  border-radius: 9px;
-  position: relative;
-  cursor: pointer;
-  transition: background 0.2s;
-}
-
-.toggle.on { background: rgba(0, 240, 255, 0.25); }
-
-.toggle::after {
-  content: '';
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 14px;
-  height: 14px;
-  background: var(--text-dim);
-  border-radius: 50%;
-  transition: all 0.2s;
-}
-
-.toggle.on::after {
-  left: 20px;
-  background: var(--cyan);
-  box-shadow: 0 0 6px var(--cyan);
-}
-
-/* Action buttons */
-.action-btns {
-  display: flex;
-  gap: 6px;
-  margin-top: 10px;
-}
-
-.action-btn {
-  flex: 1;
-  background: transparent;
-  border: 1px solid var(--border);
-  color: var(--text-dim);
-  font-family: 'Share Tech Mono', monospace;
-  font-size: 0.9rem;
-  padding: 8px;
-  cursor: pointer;
-  border-radius: 3px;
-  transition: all 0.15s;
-  text-align: center;
-  letter-spacing: 0.05em;
-}
-
-.action-btn:hover {
-  border-color: var(--cyan-dim);
-  color: var(--cyan);
-  background: var(--cyan-ultra-dim);
-}
-
-.sidebar-footer {
-  padding: 14px 20px;
-  border-top: 1px solid var(--border);
-  font-family: 'Share Tech Mono', monospace;
-  font-size: 0.82rem;
-  color: var(--text-dim);
-  text-align: center;
-  letter-spacing: 0.15em;
-}
-
-/* ═══════════ MAIN AREA ═══════════ */
-.main {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-
+/* ═══════════ CHAT PANEL ═══════════ */
+.chat-panel { flex: 1; display: flex; flex-direction: column; }
 .chat-header {
-  padding: 14px 28px;
-  border-bottom: 1px solid var(--border);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  background: var(--bg-panel);
-  position: relative;
+  padding: 10px 20px; border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between; background: var(--bg-panel);
 }
-
-.chat-header::after {
-  content: '';
-  position: absolute;
-  bottom: 0;
-  left: 5%;
-  width: 90%;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, var(--cyan-dim), transparent);
-}
-
-.header-left {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-}
-
-.header-left h2 {
-  font-family: 'Orbitron', sans-serif;
-  font-size: 1.05rem;
-  font-weight: 500;
-  letter-spacing: 0.2em;
-  color: var(--text-dim);
-}
-
-.agency-tag {
-  font-family: 'Share Tech Mono', monospace;
-  font-size: 1.05rem;
-  color: var(--cyan);
-  background: rgba(0, 240, 255, 0.05);
-  border: 1px solid var(--cyan-dim);
-  padding: 3px 10px;
-  border-radius: 2px;
-}
-
-.header-right {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-
-.model-tag {
-  font-family: 'Share Tech Mono', monospace;
-  font-size: 0.9rem;
-  color: var(--text-dim);
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid var(--border);
-  padding: 3px 8px;
-  border-radius: 2px;
-}
-
-.thinking-tag {
-  font-family: 'Share Tech Mono', monospace;
-  font-size: 0.9rem;
-  color: var(--orange);
-  background: var(--orange-dim);
-  border: 1px solid var(--orange-dim);
-  padding: 3px 8px;
-  border-radius: 2px;
-  display: none;
-}
-
+.chat-header::after { content: ''; position: absolute; bottom: 0; left: 5%; width: 90%; height: 1px; background: linear-gradient(90deg, transparent, var(--cyan-dim), transparent); }
+.header-left { display: flex; align-items: center; gap: 12px; }
+.header-left h2 { font-family: 'Orbitron', sans-serif; font-size: 0.8rem; font-weight: 500; letter-spacing: 0.2em; color: var(--text-dim); }
+.agency-tag { font-family: 'Share Tech Mono', monospace; font-size: 0.75rem; color: var(--cyan); background: rgba(0,240,255,0.05); border: 1px solid var(--cyan-dim); padding: 2px 8px; border-radius: 2px; }
+.header-right { display: flex; gap: 6px; align-items: center; }
+.model-tag { font-family: 'Share Tech Mono', monospace; font-size: 0.7rem; color: var(--text-dim); background: rgba(255,255,255,0.03); border: 1px solid var(--border); padding: 2px 6px; border-radius: 2px; }
+.thinking-tag { font-family: 'Share Tech Mono', monospace; font-size: 0.7rem; color: var(--orange); background: var(--orange-dim); border: 1px solid var(--orange-dim); padding: 2px 6px; border-radius: 2px; display: none; }
 .thinking-tag.visible { display: inline-block; }
 
-/* ═══════════ MESSAGES ═══════════ */
-.messages {
-  flex: 1;
-  overflow-y: auto;
-  padding: 28px;
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
-  scroll-behavior: smooth;
-}
+/* Chat controls */
+.chat-controls { padding: 6px 20px; display: flex; align-items: center; gap: 12px; border-bottom: 1px solid var(--border); background: var(--bg-panel); }
+.toggle-row { display: flex; align-items: center; gap: 8px; }
+.toggle-label { font-family: 'Share Tech Mono', monospace; font-size: 0.7rem; color: var(--text-dim); }
+.toggle { width: 30px; height: 15px; background: var(--border); border-radius: 8px; position: relative; cursor: pointer; transition: background 0.2s; }
+.toggle.on { background: rgba(0,240,255,0.25); }
+.toggle::after { content: ''; position: absolute; top: 2px; left: 2px; width: 11px; height: 11px; background: var(--text-dim); border-radius: 50%; transition: all 0.2s; }
+.toggle.on::after { left: 17px; background: var(--cyan); box-shadow: 0 0 6px var(--cyan); }
+.chat-action-btn { background: transparent; border: 1px solid var(--border); color: var(--text-dim); font-family: 'Share Tech Mono', monospace; font-size: 0.65rem; padding: 3px 10px; cursor: pointer; border-radius: 2px; transition: all 0.15s; }
+.chat-action-btn:hover { border-color: var(--cyan-dim); color: var(--cyan); }
 
+/* Messages */
+.messages { flex: 1; overflow-y: auto; padding: 16px 20px; display: flex; flex-direction: column; gap: 12px; scroll-behavior: smooth; }
 .messages::-webkit-scrollbar { width: 3px; }
 .messages::-webkit-scrollbar-track { background: transparent; }
 .messages::-webkit-scrollbar-thumb { background: var(--border-light); border-radius: 2px; }
 
-.msg {
-  max-width: 88%;
-  animation: msg-in 0.25s ease-out;
-}
-
-@keyframes msg-in {
-  from { opacity: 0; transform: translateY(8px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
+.msg { max-width: 90%; animation: msg-in 0.25s ease-out; }
+@keyframes msg-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
 .msg.user { align-self: flex-end; }
 .msg.assistant { align-self: flex-start; }
-
-.msg-label {
-  font-family: 'Share Tech Mono', monospace;
-  font-size: 0.82rem;
-  letter-spacing: 0.2em;
-  margin-bottom: 5px;
-  text-transform: uppercase;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
+.msg-label { font-family: 'Share Tech Mono', monospace; font-size: 0.65rem; letter-spacing: 0.2em; margin-bottom: 3px; text-transform: uppercase; }
 .msg.user .msg-label { text-align: right; color: var(--magenta); opacity: 0.5; }
 .msg.assistant .msg-label { color: var(--cyan); opacity: 0.5; }
+.msg-body { padding: 12px 16px; border-radius: 4px; font-size: 0.95rem; line-height: 1.7; font-weight: 400; }
+.msg.user .msg-body { background: linear-gradient(135deg, rgba(255,0,170,0.06), rgba(255,0,170,0.02)); border: 1px solid rgba(255,0,170,0.2); }
+.msg.assistant .msg-body { background: linear-gradient(135deg, rgba(0,240,255,0.04), rgba(0,240,255,0.01)); border: 1px solid rgba(0,240,255,0.15); }
 
-.msg-body {
-  padding: 16px 20px;
-  border-radius: 4px;
-  font-size: 1.1rem;
-  line-height: 1.75;
-  font-weight: 400;
-}
-
-.msg.user .msg-body {
-  background: linear-gradient(135deg, rgba(255, 0, 170, 0.06), rgba(255, 0, 170, 0.02));
-  border: 1px solid rgba(255, 0, 170, 0.2);
-}
-
-.msg.assistant .msg-body {
-  background: linear-gradient(135deg, rgba(0, 240, 255, 0.04), rgba(0, 240, 255, 0.01));
-  border: 1px solid rgba(0, 240, 255, 0.15);
-}
-
-/* Markdown styles inside messages */
-.msg-body h1, .msg-body h2, .msg-body h3, .msg-body h4 {
-  font-family: 'Orbitron', sans-serif;
-  color: var(--cyan);
-  font-weight: 500;
-  letter-spacing: 0.08em;
-  margin: 14px 0 8px 0;
-}
-.msg-body h1 { font-size: 1.2rem; }
-.msg-body h2 { font-size: 1.1rem; }
-.msg-body h3 { font-size: 1.05rem; }
+/* Markdown in messages */
+.msg-body h1, .msg-body h2, .msg-body h3, .msg-body h4 { font-family: 'Orbitron', sans-serif; color: var(--cyan); font-weight: 500; letter-spacing: 0.08em; margin: 10px 0 6px 0; }
+.msg-body h1 { font-size: 1.05rem; } .msg-body h2 { font-size: 0.95rem; } .msg-body h3 { font-size: 0.9rem; }
 .msg-body h1:first-child, .msg-body h2:first-child, .msg-body h3:first-child { margin-top: 0; }
-.msg-body p { margin-bottom: 8px; }
-.msg-body p:last-child { margin-bottom: 0; }
+.msg-body p { margin-bottom: 6px; } .msg-body p:last-child { margin-bottom: 0; }
 .msg-body strong { color: var(--cyan); font-weight: 600; }
-.msg-body em { color: var(--text-mid); font-style: italic; }
-.msg-body ul, .msg-body ol { margin: 6px 0; padding-left: 18px; }
-.msg-body li { margin-bottom: 4px; }
-.msg-body li::marker { color: var(--cyan-dim); }
-.msg-body code {
-  font-family: 'Share Tech Mono', monospace;
-  background: rgba(0, 240, 255, 0.06);
-  padding: 1px 6px;
-  border-radius: 2px;
-  font-size: 0.82em;
-  color: var(--cyan);
-}
-.msg-body pre {
-  background: rgba(0, 0, 0, 0.3);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 12px;
-  overflow-x: auto;
-  margin: 8px 0;
-}
+.msg-body em { color: var(--text-mid); }
+.msg-body ul, .msg-body ol { margin: 4px 0; padding-left: 16px; }
+.msg-body li { margin-bottom: 3px; } .msg-body li::marker { color: var(--cyan-dim); }
+.msg-body code { font-family: 'Share Tech Mono', monospace; background: rgba(0,240,255,0.06); padding: 1px 5px; border-radius: 2px; font-size: 0.8em; color: var(--cyan); }
+.msg-body pre { background: rgba(0,0,0,0.3); border: 1px solid var(--border); border-radius: 4px; padding: 10px; overflow-x: auto; margin: 6px 0; }
 .msg-body pre code { background: none; padding: 0; color: var(--text-primary); }
-.msg-body hr { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
-.msg-body table { border-collapse: collapse; width: 100%; margin: 8px 0; font-size: 1rem; }
-.msg-body th { background: rgba(0, 240, 255, 0.06); text-align: left; font-weight: 600; color: var(--cyan); }
-.msg-body th, .msg-body td { border: 1px solid var(--border); padding: 6px 10px; }
-.msg-body blockquote {
-  border-left: 2px solid var(--cyan-dim);
-  padding-left: 12px;
-  color: var(--text-mid);
-  margin: 8px 0;
-}
+.msg-body hr { border: none; border-top: 1px solid var(--border); margin: 8px 0; }
+.msg-body table { border-collapse: collapse; width: 100%; margin: 6px 0; font-size: 0.85rem; }
+.msg-body th { background: rgba(0,240,255,0.06); text-align: left; font-weight: 600; color: var(--cyan); }
+.msg-body th, .msg-body td { border: 1px solid var(--border); padding: 4px 8px; }
+.msg-body blockquote { border-left: 2px solid var(--cyan-dim); padding-left: 10px; color: var(--text-mid); margin: 6px 0; }
 
-/* Tool call indicator */
-.tool-call {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 14px;
-  background: rgba(0, 240, 255, 0.03);
-  border: 1px solid var(--border);
-  border-radius: 3px;
-  font-family: 'Share Tech Mono', monospace;
-  font-size: 0.78rem;
-  transition: opacity 0.5s, max-height 0.5s, padding 0.5s, margin 0.5s;
-  color: var(--text-dim);
-  animation: msg-in 0.25s ease-out;
-  align-self: flex-start;
-}
-
-.tool-call .tool-icon {
-  width: 14px;
-  height: 14px;
-  border: 1px solid var(--cyan-dim);
-  border-radius: 2px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-
-.tool-call .tool-icon::after {
-  content: '';
-  width: 6px;
-  height: 6px;
-  background: var(--cyan);
-  border-radius: 1px;
-  animation: tool-pulse 0.8s ease-in-out infinite;
-}
-
-@keyframes tool-pulse {
-  0%, 100% { opacity: 0.4; transform: scale(0.8); }
-  50% { opacity: 1; transform: scale(1); }
-}
-
+/* Tool call */
+.tool-call { display: flex; align-items: center; gap: 6px; padding: 6px 10px; background: rgba(0,240,255,0.03); border: 1px solid var(--border); border-radius: 3px; font-family: 'Share Tech Mono', monospace; font-size: 0.65rem; color: var(--text-dim); animation: msg-in 0.25s ease-out; align-self: flex-start; transition: opacity 0.5s, max-height 0.5s, padding 0.5s, margin 0.5s; }
+.tool-call .tool-icon { width: 12px; height: 12px; border: 1px solid var(--cyan-dim); border-radius: 2px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.tool-call .tool-icon::after { content: ''; width: 5px; height: 5px; background: var(--cyan); border-radius: 1px; animation: tool-pulse 0.8s ease-in-out infinite; }
+@keyframes tool-pulse { 0%, 100% { opacity: 0.4; } 50% { opacity: 1; } }
 .tool-call .tool-name { color: var(--cyan); }
-
-.tool-call.fade-out {
-  opacity: 0;
-  max-height: 0;
-  padding: 0 14px;
-  margin: 0;
-  overflow: hidden;
-}
+.tool-call.fade-out { opacity: 0; max-height: 0; padding: 0 10px; margin: 0; overflow: hidden; }
 
 /* Thinking block */
-.thinking-block {
-  padding: 10px 14px;
-  background: rgba(255, 106, 0, 0.04);
-  border: 1px solid var(--orange-dim);
-  border-radius: 3px;
-  font-family: 'Share Tech Mono', monospace;
-  font-size: 0.95rem;
-  color: var(--text-dim);
-  line-height: 1.6;
-  max-height: 200px;
-  overflow-y: auto;
-  animation: msg-in 0.25s ease-out;
-  align-self: flex-start;
-  max-width: 88%;
-  cursor: pointer;
-  position: relative;
-}
-
-.thinking-block::before {
-  content: 'EXTENDED THINKING';
-  display: block;
-  font-family: 'Orbitron', sans-serif;
-  font-size: 0.75rem;
-  letter-spacing: 0.2em;
-  color: var(--orange);
-  margin-bottom: 6px;
-}
-
-.thinking-block.collapsed {
-  max-height: 40px;
-  overflow: hidden;
-}
-
-.thinking-block.collapsed::after {
-  content: '▼ click to expand';
-  position: absolute;
-  bottom: 4px;
-  right: 10px;
-  color: var(--orange);
-  font-size: 0.82rem;
-}
+.thinking-block { padding: 8px 10px; background: rgba(255,106,0,0.04); border: 1px solid var(--orange-dim); border-radius: 3px; font-family: 'Share Tech Mono', monospace; font-size: 0.75rem; color: var(--text-dim); line-height: 1.5; max-height: 150px; overflow-y: auto; animation: msg-in 0.25s ease-out; align-self: flex-start; max-width: 90%; cursor: pointer; position: relative; }
+.thinking-block::before { content: 'EXTENDED THINKING'; display: block; font-family: 'Orbitron', sans-serif; font-size: 0.6rem; letter-spacing: 0.2em; color: var(--orange); margin-bottom: 4px; }
+.thinking-block.collapsed { max-height: 32px; overflow: hidden; }
+.thinking-block.collapsed::after { content: 'click to expand'; position: absolute; bottom: 3px; right: 8px; color: var(--orange); font-size: 0.6rem; }
 
 /* Usage stats */
-.usage-bar {
-  display: flex;
-  gap: 16px;
-  padding: 6px 14px;
-  font-family: 'Share Tech Mono', monospace;
-  font-size: 0.82rem;
-  color: var(--text-dim);
-  align-self: flex-start;
-  animation: msg-in 0.25s ease-out;
-}
+.usage-bar { display: flex; gap: 12px; padding: 4px 10px; font-family: 'Share Tech Mono', monospace; font-size: 0.65rem; color: var(--text-dim); align-self: flex-start; }
+.usage-bar .label { color: var(--text-dim); } .usage-bar .val { color: var(--cyan); margin-left: 3px; } .usage-bar .cached { color: var(--success); }
 
-.usage-bar span { letter-spacing: 0.03em; }
-.usage-bar .label { color: var(--text-dim); }
-.usage-bar .val { color: var(--cyan); margin-left: 4px; }
-.usage-bar .cached { color: var(--success); }
+/* Typing */
+.typing { display: none; align-self: flex-start; padding: 10px 14px; background: rgba(0,240,255,0.03); border: 1px solid var(--cyan-dim); border-radius: 4px; }
+.typing.visible { display: flex; gap: 4px; align-items: center; }
+.typing span { width: 4px; height: 4px; background: var(--cyan); border-radius: 50%; animation: typing-pulse 1.4s ease-in-out infinite; box-shadow: 0 0 4px var(--cyan); }
+.typing span:nth-child(2) { animation-delay: 0.2s; } .typing span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes typing-pulse { 0%, 60%, 100% { transform: scale(0.5); opacity: 0.2; } 30% { transform: scale(1); opacity: 1; } }
 
-/* Typing indicator */
-.typing {
-  display: none;
-  align-self: flex-start;
-  padding: 12px 16px;
-  background: rgba(0, 240, 255, 0.03);
-  border: 1px solid var(--cyan-dim);
-  border-radius: 4px;
-  animation: msg-in 0.25s ease-out;
-}
-
-.typing.visible { display: flex; gap: 5px; align-items: center; }
-
-.typing span {
-  width: 4px;
-  height: 4px;
-  background: var(--cyan);
-  border-radius: 50%;
-  animation: typing-pulse 1.4s ease-in-out infinite;
-  box-shadow: 0 0 4px var(--cyan);
-}
-
-.typing span:nth-child(2) { animation-delay: 0.2s; }
-.typing span:nth-child(3) { animation-delay: 0.4s; }
-
-@keyframes typing-pulse {
-  0%, 60%, 100% { transform: scale(0.5); opacity: 0.2; }
-  30% { transform: scale(1); opacity: 1; }
-}
-
-/* ═══════════ WELCOME ═══════════ */
-.welcome {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-  padding: 40px;
-}
-
-.hex-ring {
-  width: 100px;
-  height: 100px;
-  position: relative;
-  margin-bottom: 30px;
-}
-
-.hex-ring svg {
-  width: 100%;
-  height: 100%;
-  animation: hex-spin 30s linear infinite;
-}
-
+/* Welcome */
+.welcome { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 20px; }
+.hex-ring { width: 70px; height: 70px; position: relative; margin-bottom: 16px; }
+.hex-ring svg { width: 100%; height: 100%; animation: hex-spin 30s linear infinite; }
 .hex-ring svg .outer { stroke: var(--cyan-dim); fill: none; stroke-width: 0.5; }
 .hex-ring svg .inner { stroke: var(--cyan); fill: none; stroke-width: 0.8; stroke-dasharray: 20 10; animation: dash-flow 3s linear infinite; }
-
 @keyframes hex-spin { to { transform: rotate(360deg); } }
 @keyframes dash-flow { to { stroke-dashoffset: -30; } }
+.hex-ring .center-icon { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); width: 22px; height: 22px; stroke: var(--cyan); fill: none; stroke-width: 1.5; }
+.welcome h1 { font-family: 'Orbitron', sans-serif; font-size: 0.95rem; font-weight: 500; letter-spacing: 0.25em; margin-bottom: 8px; }
+.welcome p { font-size: 0.85rem; color: var(--text-dim); max-width: 400px; line-height: 1.6; }
+.quick-prompts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 16px; justify-content: center; max-width: 560px; }
+.quick-prompt { background: rgba(0,240,255,0.03); border: 1px solid var(--border); color: var(--text-dim); font-family: 'Share Tech Mono', monospace; font-size: 0.65rem; padding: 6px 10px; border-radius: 2px; cursor: pointer; transition: all 0.15s; }
+.quick-prompt:hover { border-color: var(--cyan-dim); color: var(--cyan); background: rgba(0,240,255,0.06); }
 
-.hex-ring .center-icon {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: 28px;
-  height: 28px;
-  stroke: var(--cyan);
-  fill: none;
-  stroke-width: 1.5;
-}
-
-.welcome h1 {
-  font-family: 'Orbitron', sans-serif;
-  font-size: 1.25rem;
-  font-weight: 500;
-  letter-spacing: 0.25em;
-  color: var(--text-primary);
-  margin-bottom: 12px;
-}
-
-.welcome p {
-  font-size: 1.05rem;
-  color: var(--text-dim);
-  max-width: 440px;
-  line-height: 1.65;
-}
-
-.welcome .version {
-  font-family: 'Share Tech Mono', monospace;
-  font-size: 0.9rem;
-  color: var(--text-dim);
-  margin-top: 6px;
-  letter-spacing: 0.15em;
-}
-
-.quick-prompts {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 28px;
-  justify-content: center;
-  max-width: 640px;
-}
-
-.quick-prompt {
-  background: rgba(0, 240, 255, 0.03);
-  border: 1px solid var(--border);
-  color: var(--text-dim);
-  font-family: 'Share Tech Mono', monospace;
-  font-size: 0.78rem;
-  padding: 9px 14px;
-  border-radius: 2px;
-  cursor: pointer;
-  transition: all 0.15s;
-  letter-spacing: 0.01em;
-}
-
-.quick-prompt:hover {
-  border-color: var(--cyan-dim);
-  color: var(--cyan);
-  background: rgba(0, 240, 255, 0.06);
-  box-shadow: 0 0 12px rgba(0, 240, 255, 0.04);
-}
-
-/* ═══════════ INPUT AREA ═══════════ */
-.input-area {
-  padding: 18px 28px;
-  border-top: 1px solid var(--border);
-  background: var(--bg-panel);
-  position: relative;
-}
-
-.input-area::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 5%;
-  width: 90%;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, var(--cyan-dim), transparent);
-}
-
-.input-wrap {
-  display: flex;
-  gap: 10px;
-  align-items: flex-end;
-}
-
-.input-wrap textarea {
-  flex: 1;
-  background: var(--bg-input);
-  border: 1px solid var(--border);
-  color: var(--text-primary);
-  font-family: 'Rajdhani', sans-serif;
-  font-size: 1.1rem;
-  font-weight: 400;
-  padding: 12px 16px;
-  border-radius: 4px;
-  resize: none;
-  outline: none;
-  min-height: 46px;
-  max-height: 140px;
-  line-height: 1.5;
-  transition: border-color 0.15s;
-}
-
+/* Input */
+.input-area { padding: 12px 20px; border-top: 1px solid var(--border); background: var(--bg-panel); position: relative; }
+.input-area::before { content: ''; position: absolute; top: 0; left: 5%; width: 90%; height: 1px; background: linear-gradient(90deg, transparent, var(--cyan-dim), transparent); }
+.input-wrap { display: flex; gap: 8px; align-items: flex-end; }
+.input-wrap textarea { flex: 1; background: var(--bg-input); border: 1px solid var(--border); color: var(--text-primary); font-family: 'Rajdhani', sans-serif; font-size: 0.95rem; font-weight: 400; padding: 10px 14px; border-radius: 4px; resize: none; outline: none; min-height: 40px; max-height: 120px; line-height: 1.5; transition: border-color 0.15s; }
 .input-wrap textarea::placeholder { color: var(--text-dim); }
-
-.input-wrap textarea:focus {
-  border-color: var(--cyan-dim);
-  box-shadow: 0 0 20px rgba(0, 240, 255, 0.03);
-}
-
-.send-btn {
-  width: 46px;
-  height: 46px;
-  background: rgba(0, 240, 255, 0.06);
-  border: 1px solid var(--cyan-dim);
-  color: var(--cyan);
-  border-radius: 4px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.15s;
-  flex-shrink: 0;
-}
-
-.send-btn:hover:not(:disabled) {
-  background: rgba(0, 240, 255, 0.12);
-  border-color: var(--cyan);
-  box-shadow: 0 0 18px rgba(0, 240, 255, 0.12);
-}
-
+.input-wrap textarea:focus { border-color: var(--cyan-dim); box-shadow: 0 0 15px rgba(0,240,255,0.03); }
+.send-btn { width: 40px; height: 40px; background: rgba(0,240,255,0.06); border: 1px solid var(--cyan-dim); color: var(--cyan); border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.15s; flex-shrink: 0; }
+.send-btn:hover:not(:disabled) { background: rgba(0,240,255,0.12); border-color: var(--cyan); box-shadow: 0 0 15px rgba(0,240,255,0.12); }
 .send-btn:disabled { opacity: 0.25; cursor: not-allowed; }
+.send-btn svg { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 2; }
+.input-hint { font-family: 'Share Tech Mono', monospace; font-size: 0.65rem; color: var(--text-dim); margin-top: 4px; display: flex; justify-content: space-between; }
 
-.send-btn svg {
-  width: 18px;
-  height: 18px;
-  stroke: currentColor;
-  fill: none;
-  stroke-width: 2;
-}
-
-.input-hint {
-  font-family: 'Share Tech Mono', monospace;
-  font-size: 0.82rem;
-  color: var(--text-dim);
-  margin-top: 6px;
-  display: flex;
-  justify-content: space-between;
-}
+/* Status dot animation */
+.status-dot { display: inline-block; width: 5px; height: 5px; background: var(--success); border-radius: 50%; margin-right: 5px; box-shadow: 0 0 6px var(--success); animation: pulse-dot 2s ease-in-out infinite; }
+@keyframes pulse-dot { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
 
 /* ═══════════ RESPONSIVE ═══════════ */
-@media (max-width: 768px) {
-  .sidebar { display: none; }
-  .messages { padding: 14px; }
-  .input-area { padding: 10px 14px; }
-  .msg { max-width: 95%; }
-}
+@media (max-width: 1200px) { .stat-row { grid-template-columns: repeat(3, 1fr); } .widget-grid { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 768px) { .nav { display: none; } .stat-row { grid-template-columns: repeat(2, 1fr); } .widget-grid { grid-template-columns: 1fr; } }
 </style>
 </head>
 <body>
@@ -868,121 +348,233 @@ body::before {
 <div class="corner corner-br"></div>
 
 <div class="app">
-  <!-- ═══ SIDEBAR ═══ -->
-  <aside class="sidebar">
+  <!-- ═══ NAV ═══ -->
+  <nav class="nav">
     <div class="logo-section">
       <div class="logo">MCSA</div>
-      <div class="logo-sub">Intelligence Terminal v2.0</div>
+      <div class="logo-sub">Intelligence Command v3.0</div>
     </div>
 
-    <div class="status-bar">
-      <div class="status-row">
-        <span><span class="status-dot"></span>System</span>
-        <span class="val">ONLINE</span>
-      </div>
-      <div class="status-row">
-        <span>Intel Reports</span>
-        <span class="val-cyan" id="stat-reports">--</span>
-      </div>
-      <div class="status-row">
-        <span>Registries</span>
-        <span class="val-cyan" id="stat-registries">--</span>
-      </div>
-      <div class="status-row">
-        <span>Total Runs</span>
-        <span class="val-cyan" id="stat-runs">--</span>
-      </div>
-      <div class="status-row">
-        <span>Surveillance Cost</span>
-        <span class="val-warn" id="stat-cost">--</span>
-      </div>
-      <div class="status-row">
-        <span>Last Scan</span>
-        <span class="val" id="stat-lastrun">--</span>
-      </div>
+    <div class="nav-items">
+      <button class="nav-btn active" data-panel="dashboard" onclick="switchPanel('dashboard', this)">
+        <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+        DASHBOARD
+      </button>
+      <button class="nav-btn" data-panel="chat" onclick="switchPanel('chat', this)">
+        <svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+        INTELLIGENCE CHAT
+      </button>
+      <button class="nav-btn" data-panel="alerts" onclick="switchPanel('alerts', this)">
+        <svg viewBox="0 0 24 24"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 01-3.46 0"/></svg>
+        ALERTS
+        <span class="nav-badge" id="alert-badge" style="display:none">0</span>
+      </button>
+
+      <div class="nav-section">Agency Filter</div>
     </div>
 
-    <div class="agency-section">
-      <div class="section-header">
-        <div class="section-label">Agency Filter</div>
-      </div>
-      <div class="agency-list" id="agency-list">
-        <button class="agency-btn active" data-agency="all" onclick="selectAgency('all', this)">ALL AGENCIES</button>
-      </div>
+    <div class="agency-pills" id="agency-pills">
+      <button class="agency-pill active" onclick="selectAgency('all', this)">ALL</button>
     </div>
 
-    <div class="controls-section">
-      <div class="section-label" style="margin-bottom: 8px;">Controls</div>
-      <div class="toggle-row">
-        <span class="toggle-label">DEEP THINK</span>
-        <div class="toggle" id="toggle-think" onclick="toggleThink()"></div>
-      </div>
-      <div class="action-btns">
-        <button class="action-btn" onclick="newChat()">NEW CHAT</button>
-        <button class="action-btn" onclick="exportChat()">EXPORT</button>
-      </div>
-    </div>
+    <div style="flex:1"></div>
 
-    <div class="sidebar-footer">
-      TOMORROW GROUP // MCSA
+    <div class="nav-footer">
+      <span class="status-dot"></span> TOMORROW GROUP // MCSA
     </div>
-  </aside>
+  </nav>
 
-  <!-- ═══ MAIN ═══ -->
-  <main class="main">
-    <div class="chat-header">
-      <div class="header-left">
-        <h2>COMPETITIVE INTELLIGENCE</h2>
-        <span class="agency-tag" id="agency-tag">ALL AGENCIES</span>
-      </div>
-      <div class="header-right">
-        <span class="thinking-tag" id="thinking-tag">THINKING</span>
-        <span class="model-tag">SONNET 4</span>
-      </div>
-    </div>
+  <!-- ═══ CONTENT ═══ -->
+  <div class="content">
 
-    <div class="messages" id="messages">
-      <div class="welcome" id="welcome">
-        <div class="hex-ring">
-          <svg viewBox="0 0 100 100">
-            <circle class="outer" cx="50" cy="50" r="45" />
-            <circle class="inner" cx="50" cy="50" r="38" />
-          </svg>
-          <svg class="center-icon" viewBox="0 0 24 24">
-            <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
+    <!-- ═══ DASHBOARD PANEL ═══ -->
+    <div class="panel active" id="panel-dashboard">
+      <div class="dash" id="dash">
+        <!-- Stat cards -->
+        <div class="stat-row">
+          <div class="stat-card cyan">
+            <div class="stat-label">Intel Reports</div>
+            <div class="stat-value cyan" id="d-reports">--</div>
+            <div class="stat-sub">across all modules</div>
+          </div>
+          <div class="stat-card green">
+            <div class="stat-label">Agencies</div>
+            <div class="stat-value green" id="d-agencies">--</div>
+            <div class="stat-sub">under surveillance</div>
+          </div>
+          <div class="stat-card magenta">
+            <div class="stat-label">Competitors</div>
+            <div class="stat-value magenta" id="d-competitors">--</div>
+            <div class="stat-sub">tracked total</div>
+          </div>
+          <div class="stat-card warn">
+            <div class="stat-label">Total Cost</div>
+            <div class="stat-value warn" id="d-cost">--</div>
+            <div class="stat-sub">surveillance spend</div>
+          </div>
+          <div class="stat-card red">
+            <div class="stat-label">Active Alerts</div>
+            <div class="stat-value red" id="d-alerts">0</div>
+            <div class="stat-sub">unacknowledged</div>
+          </div>
+          <div class="stat-card orange">
+            <div class="stat-label">Last Scan</div>
+            <div class="stat-value orange" id="d-lastscan" style="font-size:0.9rem">--</div>
+            <div class="stat-sub" id="d-runs">-- runs total</div>
+          </div>
         </div>
-        <h1>MCSA INTELLIGENCE</h1>
-        <p>Query competitive intelligence across Tomorrow Group's 5 agencies. Claude uses tools to search reports and registries in real-time.</p>
-        <div class="version">TOOL USE + PROMPT CACHING + EXTENDED THINKING</div>
-        <div class="quick-prompts">
-          <button class="quick-prompt" onclick="askQuick(this)">What are Found's top competitors doing on LinkedIn?</button>
-          <button class="quick-prompt" onclick="askQuick(this)">Give me a competitive threat summary across all agencies</button>
-          <button class="quick-prompt" onclick="askQuick(this)">What content gaps exist for SEED vs competitors?</button>
-          <button class="quick-prompt" onclick="askQuick(this)">Compare Disrupt's competitors by threat level</button>
-          <button class="quick-prompt" onclick="askQuick(this)">What industry trends are competitors capitalizing on?</button>
-          <button class="quick-prompt" onclick="askQuick(this)">Show me the surveillance run history and costs</button>
+
+        <!-- Widget row 1 -->
+        <div class="widget-grid">
+          <!-- Alert Feed -->
+          <div class="widget">
+            <div class="widget-header">
+              <div class="widget-title">Alert Feed</div>
+              <div class="widget-badge" id="w-alert-count">0 signals</div>
+            </div>
+            <div class="widget-body" id="w-alerts">
+              <div style="color:var(--text-dim);font-size:0.8rem;text-align:center;padding:20px">No alerts detected</div>
+            </div>
+          </div>
+
+          <!-- Module Distribution -->
+          <div class="widget">
+            <div class="widget-header">
+              <div class="widget-title">Module Distribution</div>
+              <div class="widget-badge">reports by type</div>
+            </div>
+            <div class="widget-body" id="w-modules">
+              <div style="display:flex;flex-direction:column;justify-content:center;height:100%;gap:10px" id="module-bars"></div>
+            </div>
+          </div>
+
+          <!-- Alert Severity -->
+          <div class="widget">
+            <div class="widget-header">
+              <div class="widget-title">Alert Severity</div>
+              <div class="widget-badge">breakdown</div>
+            </div>
+            <div class="widget-body">
+              <div class="severity-ring" id="w-severity">
+                <div class="ring-chart">
+                  <svg viewBox="0 0 100 100">
+                    <circle cx="50" cy="50" r="40" stroke="var(--border)" stroke-width="8" fill="none"/>
+                    <circle id="ring-high" cx="50" cy="50" r="40" stroke="var(--red)" stroke-width="8" fill="none" stroke-dasharray="0 251.3" stroke-linecap="round"/>
+                    <circle id="ring-med" cx="50" cy="50" r="40" stroke="var(--orange)" stroke-width="8" fill="none" stroke-dasharray="0 251.3" stroke-linecap="round"/>
+                    <circle id="ring-low" cx="50" cy="50" r="40" stroke="var(--text-dim)" stroke-width="8" fill="none" stroke-dasharray="0 251.3" stroke-linecap="round"/>
+                  </svg>
+                  <div class="ring-center">
+                    <div class="ring-num" id="ring-total">0</div>
+                    <div class="ring-label">TOTAL</div>
+                  </div>
+                </div>
+                <div class="ring-legend">
+                  <div class="ring-legend-item"><div class="ring-legend-dot" style="background:var(--red)"></div>HIGH <span id="sev-high" style="color:var(--text-primary);margin-left:4px">0</span></div>
+                  <div class="ring-legend-item"><div class="ring-legend-dot" style="background:var(--orange)"></div>MEDIUM <span id="sev-med" style="color:var(--text-primary);margin-left:4px">0</span></div>
+                  <div class="ring-legend-item"><div class="ring-legend-dot" style="background:var(--text-dim)"></div>LOW <span id="sev-low" style="color:var(--text-primary);margin-left:4px">0</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Widget row 2 -->
+        <div class="widget-grid-2">
+          <!-- Agency Health -->
+          <div class="widget">
+            <div class="widget-header">
+              <div class="widget-title">Agency Health</div>
+              <div class="widget-badge">competitor coverage</div>
+            </div>
+            <div class="widget-body" id="w-health"></div>
+          </div>
+
+          <!-- Cost Timeline -->
+          <div class="widget">
+            <div class="widget-header">
+              <div class="widget-title">Cost Timeline</div>
+              <div class="widget-badge">per run</div>
+            </div>
+            <div class="widget-body">
+              <div class="sparkline-row" id="w-cost-spark"></div>
+              <div style="display:flex;justify-content:space-between;font-family:'Share Tech Mono',monospace;font-size:0.55rem;color:var(--text-dim);margin-top:4px;padding:0 2px">
+                <span id="cost-oldest"></span>
+                <span id="cost-newest"></span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ═══ CHAT PANEL ═══ -->
+    <div class="panel" id="panel-chat">
+      <div class="chat-panel">
+        <div class="chat-header" style="position:relative">
+          <div class="header-left">
+            <h2>INTELLIGENCE CHAT</h2>
+            <span class="agency-tag" id="agency-tag">ALL AGENCIES</span>
+          </div>
+          <div class="header-right">
+            <span class="thinking-tag" id="thinking-tag">THINKING</span>
+            <span class="model-tag">SONNET 4</span>
+          </div>
+        </div>
+        <div class="chat-controls">
+          <div class="toggle-row">
+            <span class="toggle-label">DEEP THINK</span>
+            <div class="toggle" id="toggle-think" onclick="toggleThink()"></div>
+          </div>
+          <button class="chat-action-btn" onclick="newChat()">NEW CHAT</button>
+          <button class="chat-action-btn" onclick="exportChat()">EXPORT</button>
+          <span style="flex:1"></span>
+          <span id="token-hint" style="font-family:'Share Tech Mono',monospace;font-size:0.6rem;color:var(--text-dim)"></span>
+        </div>
+        <div class="messages" id="messages">
+          <div class="welcome" id="welcome">
+            <div class="hex-ring">
+              <svg viewBox="0 0 100 100"><circle class="outer" cx="50" cy="50" r="45"/><circle class="inner" cx="50" cy="50" r="38"/></svg>
+              <svg class="center-icon" viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </div>
+            <h1>MCSA INTELLIGENCE</h1>
+            <p>Query competitive intelligence across Tomorrow Group's 5 agencies.</p>
+            <div class="quick-prompts">
+              <button class="quick-prompt" onclick="askQuick(this)">What are Found's top competitors doing on LinkedIn?</button>
+              <button class="quick-prompt" onclick="askQuick(this)">Competitive threat summary across all agencies</button>
+              <button class="quick-prompt" onclick="askQuick(this)">Any high-priority alerts I should know about?</button>
+              <button class="quick-prompt" onclick="askQuick(this)">Compare competitor website changes this week</button>
+              <button class="quick-prompt" onclick="askQuick(this)">Show surveillance run history and costs</button>
+            </div>
+          </div>
+        </div>
+        <div class="typing" id="typing"><span></span><span></span><span></span></div>
+        <div class="input-area">
+          <div class="input-wrap">
+            <textarea id="input" placeholder="Ask about competitors, threats, opportunities..." rows="1" onkeydown="handleKey(event)" oninput="autoResize(this)"></textarea>
+            <button class="send-btn" id="send-btn" onclick="sendMessage()">
+              <svg viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+            </button>
+          </div>
+          <div class="input-hint">
+            <span>Enter to send / Shift+Enter for newline</span>
+          </div>
         </div>
       </div>
     </div>
 
-    <div class="typing" id="typing">
-      <span></span><span></span><span></span>
+    <!-- ═══ ALERTS PANEL ═══ -->
+    <div class="panel" id="panel-alerts">
+      <div class="dash">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:4px">
+          <h2 style="font-family:'Orbitron',sans-serif;font-size:0.9rem;font-weight:500;letter-spacing:0.2em;color:var(--text-dim)">ALL ALERTS</h2>
+          <span class="widget-badge" id="all-alert-count">0 total</span>
+        </div>
+        <div id="full-alert-list"></div>
+      </div>
     </div>
 
-    <div class="input-area">
-      <div class="input-wrap">
-        <textarea id="input" placeholder="Ask about competitors, trends, gaps, opportunities..." rows="1" onkeydown="handleKey(event)" oninput="autoResize(this)"></textarea>
-        <button class="send-btn" id="send-btn" onclick="sendMessage()">
-          <svg viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-        </button>
-      </div>
-      <div class="input-hint">
-        <span>Enter to send · Shift+Enter for new line</span>
-        <span id="token-hint"></span>
-      </div>
-    </div>
-  </main>
+  </div>
 </div>
 
 <script>
@@ -992,51 +584,220 @@ let chatHistory = [];
 let isStreaming = false;
 let deepThink = false;
 let totalTokens = { input: 0, output: 0, cached: 0, tools: 0 };
+let dashData = null;
 
-// Configure marked
-marked.setOptions({
-  breaks: true,
-  gfm: true,
-});
+marked.setOptions({ breaks: true, gfm: true });
+
+// ═══════════ PANEL SWITCHING ═══════════
+function switchPanel(name, btn) {
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('panel-' + name).classList.add('active');
+  if (btn) btn.classList.add('active');
+  if (name === 'chat') document.getElementById('input')?.focus();
+}
 
 // ═══════════ INIT ═══════════
 async function init() {
   try {
-    const [agenciesRes, statsRes] = await Promise.all([
+    const [agenciesRes, dashRes] = await Promise.all([
       fetch('/api/agencies').then(r => r.json()),
-      fetch('/api/stats').then(r => r.json()),
+      fetch('/api/dashboard').then(r => r.json()),
     ]);
 
-    const list = document.getElementById('agency-list');
-    for (const name of agenciesRes.agencies) {
+    // Agency pills
+    const pills = document.getElementById('agency-pills');
+    for (const name of agenciesRes.agencies || []) {
       const btn = document.createElement('button');
-      btn.className = 'agency-btn';
-      btn.dataset.agency = name;
+      btn.className = 'agency-pill';
       btn.textContent = name.toUpperCase();
       btn.onclick = () => selectAgency(name, btn);
-      list.appendChild(btn);
+      pills.appendChild(btn);
     }
 
-    document.getElementById('stat-reports').textContent = statsRes.reports;
-    document.getElementById('stat-registries').textContent = statsRes.registries;
-    document.getElementById('stat-runs').textContent = statsRes.total_runs;
-    document.getElementById('stat-cost').textContent = '$' + statsRes.total_cost.toFixed(2);
-    document.getElementById('stat-lastrun').textContent = statsRes.last_run.replace('T', ' ');
+    dashData = dashRes;
+    renderDashboard(dashRes);
   } catch (e) {
     console.error('Init failed:', e);
   }
 }
 
+// ═══════════ DASHBOARD RENDERING ═══════════
+function renderDashboard(d) {
+  if (!d || d.error) return;
+  const s = d.stats || {};
+
+  // Stat cards — animate count up
+  animateValue('d-reports', 0, s.reports || 0, 1200);
+  animateValue('d-agencies', 0, d.agency_health?.length || 0, 800);
+
+  let totalComp = 0;
+  (d.agency_health || []).forEach(a => totalComp += a.competitors || 0);
+  animateValue('d-competitors', 0, totalComp, 1000);
+
+  document.getElementById('d-cost').textContent = '$' + (s.total_cost || 0).toFixed(2);
+  animateValue('d-alerts', 0, s.unacknowledged_alerts || 0, 600);
+  document.getElementById('d-lastscan').textContent = (s.last_run || '--').replace('T', ' ');
+  document.getElementById('d-runs').textContent = (s.total_runs || 0) + ' runs total';
+
+  // Alert badge
+  const badge = document.getElementById('alert-badge');
+  const unack = s.unacknowledged_alerts || 0;
+  if (unack > 0) { badge.textContent = unack; badge.style.display = 'inline'; }
+
+  // Alert feed widget
+  renderAlertFeed(d.alerts || []);
+
+  // Module distribution
+  renderModuleBars(d.module_counts || {});
+
+  // Severity ring
+  renderSeverityRing(d.alert_severity || {});
+
+  // Agency health
+  renderAgencyHealth(d.agency_health || []);
+
+  // Cost sparkline
+  renderCostSparkline(d.cost_timeline || []);
+}
+
+function animateValue(id, start, end, duration) {
+  const el = document.getElementById(id);
+  if (!el || end === 0) { el.textContent = end; return; }
+  const range = end - start;
+  const startTime = performance.now();
+  function step(now) {
+    const elapsed = now - startTime;
+    const progress = Math.min(elapsed / duration, 1);
+    const eased = 1 - Math.pow(1 - progress, 3);
+    el.textContent = Math.floor(start + range * eased);
+    if (progress < 1) requestAnimationFrame(step);
+  }
+  requestAnimationFrame(step);
+}
+
+function renderAlertFeed(alerts) {
+  const container = document.getElementById('w-alerts');
+  document.getElementById('w-alert-count').textContent = alerts.length + ' signals';
+  if (!alerts.length) { container.innerHTML = '<div style="color:var(--text-dim);font-size:0.8rem;text-align:center;padding:20px">No alerts detected</div>'; return; }
+  container.innerHTML = alerts.map(a => `
+    <div class="alert-item">
+      <div class="alert-dot ${a.severity}"></div>
+      <div class="alert-content">
+        <div class="alert-title">${escHtml(a.title)}</div>
+        <div class="alert-meta">${a.agency_name} / ${a.alert_type} / ${(a.created_at||'').slice(0,16)}</div>
+        <div class="alert-detail">${escHtml((a.detail||'').slice(0,120))}${(a.detail||'').length > 120 ? '...' : ''}</div>
+      </div>
+    </div>
+  `).join('');
+
+  // Full alerts panel
+  const fullList = document.getElementById('full-alert-list');
+  document.getElementById('all-alert-count').textContent = alerts.length + ' total';
+  fullList.innerHTML = alerts.map(a => `
+    <div class="alert-item" style="padding:12px 0">
+      <div class="alert-dot ${a.severity}"></div>
+      <div class="alert-content">
+        <div class="alert-title" style="font-size:0.95rem">${escHtml(a.title)}</div>
+        <div class="alert-meta">${a.agency_name} / ${a.alert_type} / ${a.severity.toUpperCase()} / ${(a.created_at||'').slice(0,16)}</div>
+        <div class="alert-detail" style="font-size:0.85rem;margin-top:6px">${escHtml(a.detail||'')}</div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function renderModuleBars(counts) {
+  const container = document.getElementById('module-bars');
+  const modules = ['linkedin', 'industry', 'website', 'diff', 'registry'];
+  const max = Math.max(...modules.map(m => counts[m] || 0), 1);
+  container.innerHTML = modules.map(m => {
+    const count = counts[m] || 0;
+    const pct = (count / max * 100).toFixed(0);
+    return `<div class="module-bar-row">
+      <div class="module-bar-label">${m}</div>
+      <div class="module-bar-track"><div class="module-bar-fill ${m}" style="width:0%" data-width="${pct}%"></div></div>
+      <div class="module-bar-count">${count}</div>
+    </div>`;
+  }).join('');
+  // Animate bars
+  setTimeout(() => {
+    container.querySelectorAll('.module-bar-fill').forEach(bar => {
+      bar.style.width = bar.dataset.width;
+    });
+  }, 100);
+}
+
+function renderSeverityRing(sev) {
+  const h = sev.high || 0, m = sev.medium || 0, l = sev.low || 0;
+  const total = h + m + l;
+  document.getElementById('ring-total').textContent = total;
+  document.getElementById('sev-high').textContent = h;
+  document.getElementById('sev-med').textContent = m;
+  document.getElementById('sev-low').textContent = l;
+
+  const circ = 2 * Math.PI * 40; // 251.3
+  if (total === 0) return;
+
+  const hPct = h / total, mPct = m / total, lPct = l / total;
+  const hLen = hPct * circ, mLen = mPct * circ, lLen = lPct * circ;
+
+  setTimeout(() => {
+    document.getElementById('ring-high').setAttribute('stroke-dasharray', `${hLen} ${circ - hLen}`);
+    document.getElementById('ring-high').setAttribute('stroke-dashoffset', '0');
+
+    document.getElementById('ring-med').setAttribute('stroke-dasharray', `${mLen} ${circ - mLen}`);
+    document.getElementById('ring-med').setAttribute('stroke-dashoffset', `${-hLen}`);
+
+    document.getElementById('ring-low').setAttribute('stroke-dasharray', `${lLen} ${circ - lLen}`);
+    document.getElementById('ring-low').setAttribute('stroke-dashoffset', `${-(hLen + mLen)}`);
+  }, 200);
+}
+
+function renderAgencyHealth(agencies) {
+  const container = document.getElementById('w-health');
+  if (!agencies.length) { container.innerHTML = '<div style="color:var(--text-dim);font-size:0.8rem;text-align:center;padding:20px">No registries loaded</div>'; return; }
+  const maxReports = Math.max(...agencies.map(a => a.reports || 0), 1);
+  container.innerHTML = agencies.map(a => {
+    const pct = ((a.reports || 0) / maxReports * 100).toFixed(0);
+    return `<div class="health-card">
+      <div class="health-name">${escHtml(a.name)}</div>
+      <div class="health-stats">
+        <span>Competitors: <span class="val">${a.competitors}</span></span>
+        <span>Reports: <span class="val">${a.reports}</span></span>
+        <span>Updated: <span class="val">${a.updated || '--'}</span></span>
+      </div>
+      <div class="health-bar"><div class="health-bar-fill" style="width:0%" data-width="${pct}%"></div></div>
+    </div>`;
+  }).join('');
+  setTimeout(() => {
+    container.querySelectorAll('.health-bar-fill').forEach(bar => {
+      bar.style.width = bar.dataset.width;
+    });
+  }, 300);
+}
+
+function renderCostSparkline(timeline) {
+  const container = document.getElementById('w-cost-spark');
+  if (!timeline.length) { container.innerHTML = '<div style="color:var(--text-dim);font-size:0.7rem;text-align:center;width:100%">No cost data</div>'; return; }
+  const reversed = [...timeline].reverse();
+  const maxCost = Math.max(...reversed.map(t => t.cost || 0), 0.01);
+  container.innerHTML = reversed.map(t => {
+    const h = Math.max(((t.cost || 0) / maxCost) * 100, 3);
+    return `<div class="spark-bar" style="height:${h}%" data-tooltip="$${(t.cost||0).toFixed(2)} — ${t.cadence}"></div>`;
+  }).join('');
+  document.getElementById('cost-oldest').textContent = reversed[0]?.date || '';
+  document.getElementById('cost-newest').textContent = reversed[reversed.length-1]?.date || '';
+}
+
 // ═══════════ AGENCY SELECTION ═══════════
 function selectAgency(agency, btn) {
-  document.querySelectorAll('.agency-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.agency-pill').forEach(b => b.classList.remove('active'));
   if (btn) btn.classList.add('active');
-  else document.querySelector(`[data-agency="${agency}"]`)?.classList.add('active');
   selectedAgency = agency;
   document.getElementById('agency-tag').textContent = agency === 'all' ? 'ALL AGENCIES' : agency.toUpperCase();
 }
 
-// ═══════════ CONTROLS ═══════════
+// ═══════════ CHAT CONTROLS ═══════════
 function toggleThink() {
   deepThink = !deepThink;
   document.getElementById('toggle-think').classList.toggle('on', deepThink);
@@ -1046,22 +807,11 @@ function toggleThink() {
 function newChat() {
   chatHistory = [];
   totalTokens = { input: 0, output: 0, cached: 0, tools: 0 };
-  const msgs = document.getElementById('messages');
-  msgs.innerHTML = '';
-  // Re-add welcome
   document.getElementById('messages').innerHTML = `
     <div class="welcome" id="welcome">
-      <div class="hex-ring">
-        <svg viewBox="0 0 100 100">
-          <circle class="outer" cx="50" cy="50" r="45" stroke="var(--cyan-dim)" fill="none" stroke-width="0.5"/>
-          <circle class="inner" cx="50" cy="50" r="38" stroke="var(--cyan)" fill="none" stroke-width="0.8" stroke-dasharray="20 10"/>
-        </svg>
-        <svg class="center-icon" viewBox="0 0 24 24" style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:28px;height:28px;stroke:var(--cyan);fill:none;stroke-width:1.5">
-          <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
-      </div>
-      <h1 style="font-family:'Orbitron',sans-serif;font-size:1rem;font-weight:500;letter-spacing:0.25em;margin-bottom:12px">MCSA INTELLIGENCE</h1>
-      <p style="font-size:0.85rem;color:var(--text-dim);max-width:440px;line-height:1.65">New conversation started. Query competitive intelligence across all agencies.</p>
+      <div class="hex-ring"><svg viewBox="0 0 100 100"><circle class="outer" cx="50" cy="50" r="45" stroke="var(--cyan-dim)" fill="none" stroke-width="0.5"/><circle class="inner" cx="50" cy="50" r="38" stroke="var(--cyan)" fill="none" stroke-width="0.8" stroke-dasharray="20 10"/></svg><svg class="center-icon" viewBox="0 0 24 24" style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:22px;height:22px;stroke:var(--cyan);fill:none;stroke-width:1.5"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+      <h1 style="font-family:'Orbitron',sans-serif;font-size:0.85rem;font-weight:500;letter-spacing:0.25em;margin-bottom:8px">MCSA INTELLIGENCE</h1>
+      <p style="font-size:0.8rem;color:var(--text-dim);max-width:400px;line-height:1.5">New conversation started.</p>
     </div>`;
   updateTokenHint();
 }
@@ -1069,47 +819,25 @@ function newChat() {
 async function exportChat() {
   if (!chatHistory.length) return;
   try {
-    const res = await fetch('/api/export', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messages: chatHistory, agency: selectedAgency }),
-    });
+    const res = await fetch('/api/export', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ messages: chatHistory, agency: selectedAgency }) });
     const data = await res.json();
     const blob = new Blob([data.markdown], { type: 'text/markdown' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url;
-    a.download = `mcsa-chat-${new Date().toISOString().slice(0,10)}.md`;
-    a.click();
-    URL.revokeObjectURL(url);
-  } catch (e) {
-    console.error('Export failed:', e);
-  }
+    a.href = url; a.download = `mcsa-chat-${new Date().toISOString().slice(0,10)}.md`;
+    a.click(); URL.revokeObjectURL(url);
+  } catch (e) { console.error('Export failed:', e); }
 }
 
-// ═══════════ INPUT HANDLING ═══════════
-function handleKey(e) {
-  if (e.key === 'Enter' && !e.shiftKey) {
-    e.preventDefault();
-    sendMessage();
-  }
-}
-
-function autoResize(el) {
-  el.style.height = 'auto';
-  el.style.height = Math.min(el.scrollHeight, 140) + 'px';
-}
-
-function askQuick(el) {
-  document.getElementById('input').value = el.textContent;
-  sendMessage();
-}
-
+// ═══════════ INPUT ═══════════
+function handleKey(e) { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } }
+function autoResize(el) { el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, 120) + 'px'; }
+function askQuick(el) { switchPanel('chat', document.querySelector('[data-panel="chat"]')); document.getElementById('input').value = el.textContent; sendMessage(); }
 function updateTokenHint() {
   const hint = document.getElementById('token-hint');
   if (totalTokens.input || totalTokens.output) {
     const cost = ((totalTokens.input * 3 + totalTokens.output * 15) / 1_000_000).toFixed(4);
-    hint.textContent = `${totalTokens.input.toLocaleString()}↓ ${totalTokens.output.toLocaleString()}↑ ${totalTokens.cached.toLocaleString()}⚡ · $${cost}`;
+    hint.textContent = `${totalTokens.input.toLocaleString()}in ${totalTokens.output.toLocaleString()}out ${totalTokens.cached.toLocaleString()}cached · $${cost}`;
   }
 }
 
@@ -1120,44 +848,29 @@ async function sendMessage() {
   if (!message || isStreaming) return;
   isStreaming = true;
 
-  // Hide welcome
   const welcome = document.getElementById('welcome');
   if (welcome) welcome.remove();
 
   const msgs = document.getElementById('messages');
-
-  // User message
   const userDiv = document.createElement('div');
   userDiv.className = 'msg user';
   userDiv.innerHTML = `<div class="msg-label">YOU</div><div class="msg-body">${escHtml(message)}</div>`;
   msgs.appendChild(userDiv);
 
-  input.value = '';
-  input.style.height = 'auto';
+  input.value = ''; input.style.height = 'auto';
   document.getElementById('send-btn').disabled = true;
-
-  // Typing indicator
   document.getElementById('typing').classList.add('visible');
   scrollBottom();
-
   chatHistory.push({ role: 'user', content: message });
 
   let fullText = '';
   try {
     const res = await fetch('/api/chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        message,
-        agency: selectedAgency,
-        history: chatHistory.slice(0, -1),
-        deep_think: deepThink,
-      }),
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ message, agency: selectedAgency, history: chatHistory.slice(0,-1), deep_think: deepThink }),
     });
-
     document.getElementById('typing').classList.remove('visible');
 
-    // Create assistant message (will be filled incrementally)
     const assistDiv = document.createElement('div');
     assistDiv.className = 'msg assistant';
     assistDiv.innerHTML = `<div class="msg-label">MCSA</div><div class="msg-body"></div>`;
@@ -1171,7 +884,6 @@ async function sendMessage() {
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
-
       buffer += decoder.decode(value, { stream: true });
       const lines = buffer.split('\n');
       buffer = lines.pop();
@@ -1180,92 +892,63 @@ async function sendMessage() {
         if (!line.startsWith('data: ')) continue;
         const raw = line.slice(6);
         if (raw === '[DONE]') break;
-
         try {
           const ev = JSON.parse(raw);
-
           if (ev.type === 'tool_call') {
-            // Show tool call indicator (will be removed after response)
             const toolDiv = document.createElement('div');
             toolDiv.className = 'tool-call _temp-tool';
-            const inputStr = Object.entries(ev.input || {}).map(([k,v]) => `${k}=${JSON.stringify(v)}`).join(' ');
+            const inputStr = Object.entries(ev.input||{}).map(([k,v])=>`${k}=${JSON.stringify(v)}`).join(' ');
             toolDiv.innerHTML = `<div class="tool-icon"></div><span class="tool-name">${ev.tool}</span> <span>${inputStr}</span>`;
             msgs.insertBefore(toolDiv, assistDiv);
             scrollBottom();
-          }
-
-          else if (ev.type === 'thinking') {
+          } else if (ev.type === 'thinking') {
             const thinkDiv = document.createElement('div');
             thinkDiv.className = 'thinking-block collapsed';
             thinkDiv.textContent = ev.text;
             thinkDiv.onclick = () => thinkDiv.classList.toggle('collapsed');
             msgs.insertBefore(thinkDiv, assistDiv);
             scrollBottom();
-          }
-
-          else if (ev.type === 'text') {
+          } else if (ev.type === 'text') {
             fullText += ev.text;
             bodyEl.innerHTML = marked.parse(fullText);
             scrollBottom();
-          }
-
-          else if (ev.type === 'usage') {
-            totalTokens.input += ev.input_tokens || 0;
-            totalTokens.output += ev.output_tokens || 0;
-            totalTokens.cached += ev.cache_read_tokens || 0;
-            totalTokens.tools += ev.tool_calls || 0;
-
-            // Show usage bar
+          } else if (ev.type === 'usage') {
+            totalTokens.input += ev.input_tokens||0;
+            totalTokens.output += ev.output_tokens||0;
+            totalTokens.cached += ev.cache_read_tokens||0;
+            totalTokens.tools += ev.tool_calls||0;
             const usageDiv = document.createElement('div');
             usageDiv.className = 'usage-bar';
-            const cachedPct = ev.cache_read_tokens && ev.input_tokens
-              ? Math.round((ev.cache_read_tokens / ev.input_tokens) * 100) : 0;
+            const cachedPct = ev.cache_read_tokens && ev.input_tokens ? Math.round((ev.cache_read_tokens/ev.input_tokens)*100) : 0;
             usageDiv.innerHTML = `
               <span><span class="label">IN:</span><span class="val">${(ev.input_tokens||0).toLocaleString()}</span></span>
               <span><span class="label">OUT:</span><span class="val">${(ev.output_tokens||0).toLocaleString()}</span></span>
-              ${ev.cache_read_tokens ? `<span><span class="label">CACHED:</span><span class="cached">${cachedPct}%</span></span>` : ''}
-              ${ev.tool_calls ? `<span><span class="label">TOOLS:</span><span class="val">${ev.tool_calls}</span> (${ev.tools_used.join(', ')})</span>` : ''}
-            `;
+              ${ev.cache_read_tokens?`<span><span class="label">CACHED:</span><span class="cached">${cachedPct}%</span></span>`:''}
+              ${ev.tool_calls?`<span><span class="label">TOOLS:</span><span class="val">${ev.tool_calls}</span></span>`:''}`;
             msgs.appendChild(usageDiv);
-            updateTokenHint();
-            scrollBottom();
+            updateTokenHint(); scrollBottom();
           }
-
         } catch {}
       }
     }
-
     chatHistory.push({ role: 'assistant', content: fullText });
-
-    // Fade out and remove tool call indicators after response
     setTimeout(() => {
-      document.querySelectorAll('._temp-tool').forEach(el => {
-        el.classList.add('fade-out');
-        setTimeout(() => el.remove(), 500);
-      });
+      document.querySelectorAll('._temp-tool').forEach(el => { el.classList.add('fade-out'); setTimeout(() => el.remove(), 500); });
     }, 800);
-
   } catch (e) {
     document.getElementById('typing').classList.remove('visible');
     const errDiv = document.createElement('div');
     errDiv.className = 'msg assistant';
-    errDiv.innerHTML = `<div class="msg-label">MCSA</div><div class="msg-body" style="border-color:#ff003c;color:#ff003c">CONNECTION ERROR — check server</div>`;
+    errDiv.innerHTML = `<div class="msg-label">MCSA</div><div class="msg-body" style="border-color:var(--red);color:var(--red)">CONNECTION ERROR</div>`;
     msgs.appendChild(errDiv);
   }
-
   isStreaming = false;
   document.getElementById('send-btn').disabled = false;
   input.focus();
 }
 
-function scrollBottom() {
-  const msgs = document.getElementById('messages');
-  msgs.scrollTop = msgs.scrollHeight;
-}
-
-function escHtml(s) {
-  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-}
+function scrollBottom() { const m = document.getElementById('messages'); m.scrollTop = m.scrollHeight; }
+function escHtml(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
 init();
 </script>

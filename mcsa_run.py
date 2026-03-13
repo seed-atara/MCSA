@@ -32,9 +32,15 @@ def main():
             "  python mcsa_run.py weekly\n"
             "  python mcsa_run.py monthly\n"
             "  python mcsa_run.py daily --agency Found\n"
-            "  python mcsa_run.py weekly --agency Found --agency SEED\n\n"
+            "  python mcsa_run.py weekly --agency Found --agency SEED\n"
+            "  python mcsa_run.py digest-morning\n"
+            "  python mcsa_run.py digest-weekly\n"
+            "  python mcsa_run.py digest-monthly\n\n"
             "Arguments:\n"
-            "  cadence          daily, weekly, or monthly (default: daily)\n\n"
+            "  cadence          daily, weekly, or monthly (default: daily)\n"
+            "  digest-morning   Generate and deliver Morning Brief\n"
+            "  digest-weekly    Generate and deliver Weekly Executive Summary\n"
+            "  digest-monthly   Generate and deliver Monthly Board Report\n\n"
             "Options:\n"
             "  --agency NAME    Run only for specific agency (repeatable)\n"
             "  --list-agencies  Show configured agencies and exit\n"
@@ -53,10 +59,37 @@ def main():
             console.print(f"  - {a['name']} (MD: {md}) — {a['focus']}")
         sys.exit(0)
 
+    # Handle digest commands
+    positional = [a for a in args if not a.startswith("--")]
+    if positional and positional[0].startswith("digest-"):
+        digest_map = {
+            "digest-morning": "morning",
+            "digest-weekly": "weekly",
+            "digest-monthly": "monthly",
+        }
+        digest_cmd = positional[0].lower()
+        if digest_cmd not in digest_map:
+            console.print(f"[red]Unknown digest command '{digest_cmd}'. Use: {', '.join(digest_map.keys())}[/red]")
+            sys.exit(1)
+
+        from mcsa.digests import run_digest
+        from core.config import validate_config
+        try:
+            validate_config()
+        except ValueError as e:
+            console.print(f"[red]Configuration Error:[/red]\n{e}")
+            sys.exit(1)
+
+        digest = asyncio.run(run_digest(digest_map[digest_cmd]))
+        if digest:
+            console.print(f"\n[bold green]Digest generated and delivered ({len(digest)} chars)[/bold green]")
+        else:
+            console.print(f"\n[yellow]Digest generation returned empty[/yellow]")
+        sys.exit(0)
+
     # Parse cadence
     valid_cadences = {CADENCE_DAILY, CADENCE_WEEKLY, CADENCE_MONTHLY}
     cadence = CADENCE_DAILY
-    positional = [a for a in args if not a.startswith("--")]
     if positional:
         cadence = positional[0].lower()
         if cadence not in valid_cadences:

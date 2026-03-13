@@ -485,6 +485,94 @@ async def chat(request: Request):
     return StreamingResponse(generate(), media_type="text/event-stream")
 
 
+@app.get("/api/alerts")
+async def api_alerts():
+    """Get recent alerts for dashboard."""
+    try:
+        rows = sb.table("alerts").select("*").order("created_at", desc=True).limit(20).execute()
+        return {"alerts": rows.data or []}
+    except Exception:
+        return {"alerts": []}
+
+
+@app.get("/api/dashboard")
+async def api_dashboard():
+    """Aggregated dashboard data — stats, alerts, activity timeline, agency health."""
+    try:
+        # Stats
+        reports = sb.table("reports").select("id", count="exact").execute()
+        registries_data = sb.table("registries").select("agency_name, competitors, updated_at").execute()
+        logs = sb.table("run_logs").select("*").order("created_at", desc=True).limit(30).execute()
+        alerts = sb.table("alerts").select("*").order("created_at", desc=True).limit(10).execute()
+
+        # Report counts by module
+        recent_reports = sb.table("reports").select("agency_name, module, cadence, created_at").order("created_at", desc=True).limit(100).execute()
+        module_counts = {}
+        agency_report_counts = {}
+        daily_activity = {}  # date -> count
+        for r in recent_reports.data or []:
+            mod = r.get("module", "unknown")
+            module_counts[mod] = module_counts.get(mod, 0) + 1
+            ag = r.get("agency_name", "unknown")
+            agency_report_counts[ag] = agency_report_counts.get(ag, 0) + 1
+            day = r.get("created_at", "")[:10]
+            if day:
+                daily_activity[day] = daily_activity.get(day, 0) + 1
+
+        # Cost timeline from run logs
+        cost_timeline = []
+        for log in (logs.data or [])[:20]:
+            cost_timeline.append({
+                "date": log.get("created_at", "")[:10],
+                "cost": log.get("cost", {}).get("total_cost_usd", 0),
+                "cadence": log.get("cadence", ""),
+                "duration": log.get("duration_seconds", 0),
+            })
+
+        # Agency health
+        agency_health = []
+        for reg in registries_data.data or []:
+            name = reg.get("agency_name", "")
+            competitors = reg.get("competitors", [])
+            agency_health.append({
+                "name": name,
+                "competitors": len(competitors),
+                "updated": reg.get("updated_at", "")[:10],
+                "reports": agency_report_counts.get(name, 0),
+            })
+
+        # Alert severity breakdown
+        alert_severity = {"high": 0, "medium": 0, "low": 0}
+        unacknowledged = 0
+        for a in alerts.data or []:
+            sev = a.get("severity", "low")
+            alert_severity[sev] = alert_severity.get(sev, 0) + 1
+            if not a.get("acknowledged"):
+                unacknowledged += 1
+
+        last_run = logs.data[0]["created_at"][:16] if logs.data else "never"
+        total_cost = sum(r.get("cost", {}).get("total_cost_usd", 0) for r in logs.data or [])
+
+        return {
+            "stats": {
+                "reports": len(reports.data),
+                "registries": len(registries_data.data),
+                "total_runs": len(logs.data),
+                "total_cost": round(total_cost, 2),
+                "last_run": last_run,
+                "unacknowledged_alerts": unacknowledged,
+            },
+            "alerts": alerts.data or [],
+            "alert_severity": alert_severity,
+            "module_counts": module_counts,
+            "agency_health": agency_health,
+            "cost_timeline": cost_timeline,
+            "daily_activity": daily_activity,
+        }
+    except Exception as e:
+        return {"error": str(e), "stats": {}, "alerts": [], "alert_severity": {}, "module_counts": {}, "agency_health": [], "cost_timeline": [], "daily_activity": {}}
+
+
 @app.post("/api/export")
 async def export_chat(request: Request):
     """Export conversation as markdown."""
