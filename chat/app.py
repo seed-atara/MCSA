@@ -573,6 +573,19 @@ async def api_dashboard():
         return {"error": str(e), "stats": {}, "alerts": [], "alert_severity": {}, "module_counts": {}, "agency_health": [], "cost_timeline": [], "daily_activity": {}}
 
 
+@app.post("/api/digest/{digest_type}")
+async def api_digest(digest_type: str):
+    """Trigger a digest generation and delivery. Types: morning, weekly, monthly."""
+    valid = ("morning", "weekly", "monthly")
+    if digest_type not in valid:
+        return {"error": f"Invalid type. Must be one of: {', '.join(valid)}"}
+    from mcsa.digests import run_digest
+    content = await run_digest(digest_type)
+    if content:
+        return {"status": "delivered", "type": digest_type, "length": len(content), "preview": content[:500]}
+    return {"status": "failed", "type": digest_type, "message": "No reports found or generation failed"}
+
+
 @app.post("/api/export")
 async def export_chat(request: Request):
     """Export conversation as markdown."""
