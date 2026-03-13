@@ -94,6 +94,20 @@ MCSA agents each gather their own data via `core.tools`, then the DIFF agent rec
 
 Required: `ANTHROPIC_API_KEY`, `TAVILY_API_KEY`. Optional: `FIRECRAWL_API_KEY`, `RESEND_API_KEY`, `FROM_EMAIL`, `CC_EMAILS`, `ACCESS_CODE`, `AUTH_USERNAME`, `AUTH_PASSWORD`, `BASE_URL`. Railway uses `RAILWAY_ENVIRONMENT` to switch output dir.
 
+## gstack (Web Browsing & QA)
+
+For all web browsing, use the `/browse` skill from gstack. Never use `mcp__claude-in-chrome__*` tools.
+
+Available gstack skills:
+- `/browse` — headless browser for navigating, interacting, screenshots
+- `/qa` — QA testing and site dogfooding
+- `/plan-ceo-review` — CEO-level plan review
+- `/plan-eng-review` — engineering plan review
+- `/review` — code review
+- `/ship` — shipping checklist
+- `/setup-browser-cookies` — configure browser auth cookies
+- `/retro` — retrospective
+
 ## Known Technical Debt
 
 - `src/agents.py` is monolithic (~3,400+ lines) — see TODO.md for split plan
@@ -101,4 +115,4 @@ Required: `ANTHROPIC_API_KEY`, `TAVILY_API_KEY`. Optional: `FIRECRAWL_API_KEY`, 
 - `web/requirements.txt` is a redundant subset of root requirements.txt
 - Research depth profiles exist in config but no `--depth` CLI flag
 - Default currency/locale hardcoded to GBP/UK in src/config.py
-- MCSA has no Slack/Confluence webhook delivery yet (formatters exist, delivery via Make.com/Zapier TBD)
+- MCSA email delivery (Resend) and Confluence delivery are built but not yet activated (need env vars)
