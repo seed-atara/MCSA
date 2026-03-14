@@ -1369,18 +1369,18 @@ async function loadReports(page) {
     }
 
     list.innerHTML = reports.map((r, i) => {
-      const preview = escHtml((r.content || '').slice(0, 150)) + ((r.content||'').length > 150 ? '...' : '');
-      const date = (r.date || r.created_at || '').slice(0, 16);
+      const preview = escHtml((r.preview || '').slice(0, 150)) + ((r.preview||'').length > 150 ? '...' : '');
+      const date = (r.created_at || '').slice(0, 16);
       const mod = (r.module || '').toLowerCase();
-      return `<div class="report-card" id="rpt-card-${i}" onclick="toggleReportCard(${i})">
+      return `<div class="report-card" id="rpt-card-${i}" onclick="toggleReportCard(${i}, ${r.id})">
         <div class="report-card-header">
-          <span class="report-card-agency">${escHtml(r.agency || '')}</span>
+          <span class="report-card-agency">${escHtml(r.agency_name || '')}</span>
           <span class="report-card-module ${mod}">${(r.module||'').toUpperCase()}</span>
           <span class="report-card-cadence">${(r.cadence||'').toUpperCase()}</span>
           <span class="report-card-date">${date}</span>
         </div>
         <div class="report-card-preview">${preview}</div>
-        <div class="report-card-body"><div class="msg-body">${marked.parse(r.content || '')}</div></div>
+        <div class="report-card-body"><div class="msg-body">Loading...</div></div>
       </div>`;
     }).join('');
 
@@ -1400,9 +1400,23 @@ async function loadReports(page) {
   }
 }
 
-function toggleReportCard(idx) {
+async function toggleReportCard(idx, reportId) {
   const card = document.getElementById('rpt-card-' + idx);
-  if (card) card.classList.toggle('expanded');
+  if (!card) return;
+  const wasExpanded = card.classList.contains('expanded');
+  card.classList.toggle('expanded');
+  if (!wasExpanded && reportId) {
+    const body = card.querySelector('.msg-body');
+    if (body.dataset.loaded) return;
+    try {
+      const res = await fetch('/api/reports/' + reportId);
+      const data = await res.json();
+      body.innerHTML = marked.parse(data.report?.content || 'No content');
+      body.dataset.loaded = '1';
+    } catch(e) {
+      body.innerHTML = '<span style="color:var(--red)">Failed to load report</span>';
+    }
+  }
 }
 
 init();
