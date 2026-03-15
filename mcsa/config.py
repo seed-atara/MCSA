@@ -37,6 +37,16 @@ AGENCIES: list[dict] = [
             "offering search engine optimisation, pay-per-click management, "
             "and digital performance marketing to UK clients."
         ),
+        "manual_competitors": [
+            "Impression",
+            "Croud",
+            "Brave Bison",
+            "Journey Further",
+            "Publicis",
+            "Jellyfish",
+            "Accenture Song",
+            "Rise at Seven",
+        ],
     },
     {
         "name": "SEED",
@@ -49,6 +59,13 @@ AGENCIES: list[dict] = [
             "briefs for social media strategy, content creation, creative campaigns, "
             "and community management. NOT PR-only firms or media buying agencies."
         ),
+        "manual_competitors": [
+            "Wonder Studios",
+            "Secret Level",
+            "Silverside",
+            "Asteria",
+            "Dor Brothers",
+        ],
     },
     {
         "name": "Braidr",
@@ -62,6 +79,20 @@ AGENCIES: list[dict] = [
             "modelling (MMM), customer data platforms, and marketing science. "
             "NOT generic digital agencies that happen to have an analytics team."
         ),
+        "manual_competitors": [
+            "Fifty-five",
+            "Artefact",
+            "Data Forest",
+            "Unit8",
+            "Cynozure",
+            "Merkle (dentsu)",
+            "Datatonic",
+            "JMAN Group",
+            "Elastacloud",
+            "Advancing Analytics",
+            "Baringa",
+            "Methods Analytics",
+        ],
     },
     {
         "name": "Disrupt",
@@ -74,6 +105,14 @@ AGENCIES: list[dict] = [
             "and buy paid media — display, programmatic, paid social, PPC at scale. "
             "Must be AGENCIES, not ad-tech platforms or DSPs like StackAdapt or DV360."
         ),
+        "manual_competitors": [
+            "Ogilvy",
+            "Socially Powerful",
+            "The Fifth Agency",
+            "Viral Nation",
+            "Billion Dollar Boy",
+            "Goat Agency",
+        ],
     },
     {
         "name": "Culture3",
@@ -87,6 +126,7 @@ AGENCIES: list[dict] = [
             "or emerging tech consultancy to brands. NOT blockchain infrastructure "
             "companies, crypto exchanges, or software development shops."
         ),
+        "manual_competitors": [],
     },
 ]
 

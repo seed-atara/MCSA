@@ -147,22 +147,36 @@ class MCSAOrchestrator:
             self.registries.get(agency_name, [])
         )
 
+        # Seed from manual_competitors if no registry exists yet
+        manual_names = agency.get("manual_competitors", [])
+        if not competitors and manual_names:
+            competitors = [
+                {"name": name, "source": "manual"} for name in manual_names
+            ]
+            storage.save_registry(agency_name, competitors)
+            self.registries[storage._safe(agency_name)] = competitors
+            console.print(f"[green]  Registry seeded with {len(competitors)} manual competitors[/green]")
+
         # ── Phase 1: Registry (monthly only) ─────────────────────────────
         if cadence == CADENCE_MONTHLY:
             console.print(f"[dim]  Module 1: Competitor Registry[/dim]")
             try:
                 registry_report = await self.registry_agent.research(
-                    agency, {"existing_registry": competitors}
+                    agency, {"existing_registry": competitors, "manual_competitors": manual_names}
                 )
                 reports["registry"] = registry_report
 
                 # Try to parse and persist the updated registry
                 new_registry = self.registry_agent.parse_registry_json(registry_report)
                 if new_registry:
+                    # Ensure all manual competitors are preserved
+                    new_registry = _ensure_manual_competitors(new_registry, manual_names)
                     storage.save_registry(agency_name, new_registry)
                     competitors = new_registry
                     self.registries[storage._safe(agency_name)] = new_registry
-                    console.print(f"[green]  Registry: {len(new_registry)} competitors saved[/green]")
+                    manual_count = sum(1 for c in new_registry if c.get("source") == "manual")
+                    discovered_count = len(new_registry) - manual_count
+                    console.print(f"[green]  Registry: {len(new_registry)} competitors ({manual_count} manual, {discovered_count} discovered)[/green]")
                 else:
                     console.print(f"[yellow]  Registry: report generated but JSON parse failed[/yellow]")
 
@@ -266,6 +280,32 @@ class MCSAOrchestrator:
                 reports["diff"] = f"[Error: {e}]"
 
         return reports
+
+
+def _ensure_manual_competitors(registry: list[dict], manual_names: list[str]) -> list[dict]:
+    """Ensure all manual competitors are in the registry with source='manual'.
+
+    - Manual competitors already in the registry get source='manual' tag
+    - Missing manual competitors are added as stubs
+    - AI-discovered competitors get source='discovered'
+    """
+    manual_lower = {n.lower(): n for n in manual_names}
+    registry_lower = {c.get("name", "").lower(): c for c in registry}
+
+    # Tag existing entries
+    for comp in registry:
+        name_lower = comp.get("name", "").lower()
+        if name_lower in manual_lower:
+            comp["source"] = "manual"
+        elif not comp.get("source"):
+            comp["source"] = "discovered"
+
+    # Add any missing manual competitors
+    for lower, original in manual_lower.items():
+        if lower not in registry_lower:
+            registry.append({"name": original, "source": "manual"})
+
+    return registry
 
 
 def _save_formatted(agency_name: str, module: str, cadence: str, report: str, raw_path: Path) -> None:

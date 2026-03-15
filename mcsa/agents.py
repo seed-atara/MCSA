@@ -146,6 +146,7 @@ class RegistryAgent(ResearchAgent):
         agency_focus = agency.get("focus", "")
         competitor_guidance = agency.get("competitor_guidance", "")
         existing = context.get("existing_registry", [])
+        manual_names = context.get("manual_competitors", agency.get("manual_competitors", []))
 
         # Import sibling list to exclude from results
         from .config import SIBLING_AGENCIES
@@ -165,6 +166,14 @@ class RegistryAgent(ResearchAgent):
             names_str = " OR ".join(f'"{n}"' for n in existing_names[:3])
             queries.append(f"({names_str}) agency news 2025 2026")
 
+        # Also research manual competitors specifically
+        if manual_names:
+            manual_str = " OR ".join(f'"{n}"' for n in manual_names[:5])
+            queries.append(f"({manual_str}) agency UK services website")
+            if len(manual_names) > 5:
+                manual_str2 = " OR ".join(f'"{n}"' for n in manual_names[5:10])
+                queries.append(f"({manual_str2}) agency UK services website")
+
         combined = await _deep_search(queries, max_results=5)
 
         existing_json = ""
@@ -172,6 +181,18 @@ class RegistryAgent(ResearchAgent):
             existing_json = (
                 "\n\nEXISTING REGISTRY — review, update, and flag any that should be removed:\n"
                 f"```json\n{json.dumps(existing, indent=2)}\n```"
+            )
+
+        manual_section = ""
+        if manual_names:
+            manual_list = ", ".join(manual_names)
+            manual_section = (
+                f"\n\nMANUAL COMPETITORS (human-selected, MUST be included):\n"
+                f"{manual_list}\n"
+                f"These were hand-picked by the team. Always include them in the registry "
+                f"with source: \"manual\". Enrich them with website, sector, size, etc. "
+                f"from your research data. You may also discover additional competitors "
+                f"beyond this list — mark those with source: \"discovered\".\n"
             )
 
         sibling_list = ", ".join(sorted(SIBLING_AGENCIES))
@@ -187,13 +208,17 @@ class RegistryAgent(ResearchAgent):
             f"- Blockchain infrastructure, crypto exchanges, or dev shops (unless they are an agency)\n"
             f"- Companies not operating in the UK market\n"
             f"- Companies that share the agency's name but are in unrelated industries\n\n"
+            f"COMPETITOR SOURCES:\n"
+            f"- Manual (source: \"manual\"): Human-selected competitors. ALWAYS include these.\n"
+            f"- Discovered (source: \"discovered\"): AI-identified from research. Include when relevant.\n\n"
             f"For each competitor, provide:\n"
             f"- Name, Website, Sector, Size (approx employees), Key services (top 3-5)\n"
             f"- LinkedIn URL (if findable), Active channels, Threat level (HIGH/MED/LOW)\n"
-            f"- Confidence (HIGH/MED/LOW)\n\n"
-            f"Target: 5-10 competitors. UK-market direct peers that win the same briefs.\n\n"
+            f"- Confidence (HIGH/MED/LOW), Source (\"manual\" or \"discovered\")\n\n"
+            f"Target: All manual competitors + up to 5 additional discovered ones.\n\n"
             f"OUTPUT: First a ```json``` array, then markdown summary with changes, "
             f"review checklist, and data gaps."
+            f"{manual_section}"
             f"{_GOVERNANCE}"
         )
 
