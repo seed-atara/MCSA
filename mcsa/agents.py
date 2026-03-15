@@ -33,6 +33,15 @@ from core.tools import (
 
 console = Console()
 
+# Invalid website placeholders that should not be crawled/mapped
+_INVALID_WEBSITES = {"", "not specified", "unknown", "n/a", "none", "tbc", "tbd"}
+
+
+def _valid_website(url: str) -> bool:
+    """Return True if the URL looks like a real website, not a placeholder."""
+    return bool(url) and url.strip().lower() not in _INVALID_WEBSITES
+
+
 # Shared governance footer appended to every system prompt
 _GOVERNANCE = (
     "\n\n--- GOVERNANCE ---\n"
@@ -550,7 +559,7 @@ class WebsiteAgent(ResearchAgent):
         map_comps = []
         for comp in competitors:
             website = comp.get("website", "")
-            if website:
+            if _valid_website(website):
                 map_tasks.append(tavily_map(website, max_depth=1, limit=20))
                 map_comps.append(comp)
 
@@ -614,7 +623,7 @@ class WebsiteAgent(ResearchAgent):
         crawl_comps = []
         for comp in competitors:
             website = comp.get("website", "")
-            if website:
+            if _valid_website(website):
                 crawl_tasks.append(
                     tavily_crawl(
                         website,

@@ -62,13 +62,14 @@ def _sb_insert(table: str, data: dict) -> None:
         console.print(f"[yellow]Supabase {table} insert failed: {e}[/yellow]")
 
 
-def _sb_upsert(table: str, data: dict) -> None:
+def _sb_upsert(table: str, data: dict, on_conflict: str = "") -> None:
     """Upsert a row into Supabase. Fails silently with a warning."""
     sb = _get_supabase()
     if not sb:
         return
     try:
-        sb.table(table).upsert(data).execute()
+        q = sb.table(table).upsert(data, on_conflict=on_conflict) if on_conflict else sb.table(table).upsert(data)
+        q.execute()
     except Exception as e:
         console.print(f"[yellow]Supabase {table} upsert failed: {e}[/yellow]")
 
@@ -138,7 +139,7 @@ def save_registry(agency_name: str, competitors: list[dict]) -> Path:
         "agency_name": _safe(agency_name),
         "competitors": competitors,
         "updated_at": datetime.now().isoformat(),
-    })
+    }, on_conflict="agency_name")
 
     return path
 
