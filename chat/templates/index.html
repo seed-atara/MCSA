@@ -473,6 +473,17 @@ body::before { content: ''; position: fixed; inset: 0; background: linear-gradie
 .reports-page-btn:hover { border-color: var(--cyan-dim); color: var(--cyan); }
 .reports-page-btn.active { border-color: var(--cyan); color: var(--cyan); background: rgba(0,240,255,0.07); }
 .reports-page-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+
+.action-trigger-btn {
+  background: var(--bg-input); border: 1px solid var(--border); color: var(--text-primary);
+  font-family: 'Rajdhani', sans-serif; font-size: 0.85rem; font-weight: 600;
+  padding: 8px 14px; border-radius: 3px; cursor: pointer; transition: all 0.15s;
+  letter-spacing: 0.08em; text-transform: uppercase;
+}
+.action-trigger-btn:hover { border-color: var(--cyan); color: var(--cyan); background: rgba(0,240,255,0.07); }
+.action-trigger-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.action-trigger-btn.running { border-color: var(--orange); color: var(--orange); animation: pulse-border 1.5s infinite; }
+@keyframes pulse-border { 0%,100% { border-color: var(--orange-dim); } 50% { border-color: var(--orange); } }
 .reports-page-info { font-family: 'Share Tech Mono', monospace; font-size: 0.65rem; color: var(--text-dim); }
 .reports-empty { text-align: center; padding: 40px; color: var(--text-dim); font-size: 0.85rem; }
 
@@ -536,6 +547,10 @@ body::before { content: ''; position: fixed; inset: 0; background: linear-gradie
         <svg viewBox="0 0 24 24"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 01-3.46 0"/></svg>
         ALERTS
         <span class="nav-badge" id="alert-badge" style="display:none">0</span>
+      </button>
+      <button class="nav-btn" data-panel="actions" onclick="switchPanel('actions', this)">
+        <svg viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+        ACTIONS
       </button>
 
       <div class="nav-section">Agency Filter</div>
@@ -723,11 +738,12 @@ body::before { content: ''; position: fixed; inset: 0; background: linear-gradie
             <h1>MCSA INTELLIGENCE</h1>
             <p>Query competitive intelligence across Tomorrow Group's 5 agencies.</p>
             <div class="quick-prompts">
+              <button class="quick-prompt" onclick="askQuick(this)">What content should we post this week and why?</button>
               <button class="quick-prompt" onclick="askQuick(this)">What are Found's top competitors doing on LinkedIn?</button>
-              <button class="quick-prompt" onclick="askQuick(this)">Competitive threat summary across all agencies</button>
-              <button class="quick-prompt" onclick="askQuick(this)">Any high-priority alerts I should know about?</button>
-              <button class="quick-prompt" onclick="askQuick(this)">Compare competitor website changes this week</button>
-              <button class="quick-prompt" onclick="askQuick(this)">Show surveillance run history and costs</button>
+              <button class="quick-prompt" onclick="askQuick(this)">Show content strategy recommendations for SEED</button>
+              <button class="quick-prompt" onclick="askQuick(this)">Cross-agency competitive threat summary</button>
+              <button class="quick-prompt" onclick="askQuick(this)">Which competitors are hiring and what does it signal?</button>
+              <button class="quick-prompt" onclick="askQuick(this)">Compare share-of-voice across all agencies</button>
             </div>
           </div>
         </div>
@@ -767,6 +783,8 @@ body::before { content: ''; position: fixed; inset: 0; background: linear-gradie
             <option value="website">Website</option>
             <option value="diff">DIFF</option>
             <option value="registry">Registry</option>
+            <option value="content_strategy">Content Strategy</option>
+            <option value="synthesis">Synthesis</option>
           </select>
           <select id="rpt-cadence" onchange="loadReports()">
             <option value="">All Cadences</option>
@@ -775,6 +793,7 @@ body::before { content: ''; position: fixed; inset: 0; background: linear-gradie
             <option value="monthly">Monthly</option>
           </select>
           <input type="text" id="rpt-search" placeholder="Search reports..." oninput="debounceReportSearch()">
+          <button class="reports-page-btn" style="margin-left:auto;background:var(--cyan-ultra-dim);border-color:var(--cyan-dim);color:var(--cyan)" onclick="downloadPDF()">PDF REPORT</button>
         </div>
         <div class="reports-list" id="reports-list">
           <div class="reports-empty">Select filters or search to browse reports</div>
@@ -795,6 +814,77 @@ body::before { content: ''; position: fixed; inset: 0; background: linear-gradie
           <span class="widget-badge" id="all-alert-count">0 total</span>
         </div>
         <div id="full-alert-list"></div>
+      </div>
+    </div>
+
+    <!-- ═══ ACTIONS PANEL ═══ -->
+    <div class="panel" id="panel-actions">
+      <div class="dash">
+        <h2 style="font-family:'Orbitron',sans-serif;font-size:0.9rem;font-weight:500;letter-spacing:0.2em;color:var(--text-dim);margin-bottom:12px">MARKETING INTELLIGENCE ACTIONS</h2>
+
+        <div class="widget-grid">
+          <!-- PDF Reports -->
+          <div class="widget">
+            <div class="widget-header">
+              <div class="widget-title">PDF Reports</div>
+              <div class="widget-badge">client-facing</div>
+            </div>
+            <div class="widget-body" style="display:flex;flex-direction:column;gap:8px">
+              <div style="color:var(--text-mid);font-size:0.8rem;margin-bottom:4px">Download branded competitive intelligence PDF for any agency</div>
+              <select id="pdf-agency" style="background:var(--bg-input);border:1px solid var(--border);color:var(--text-primary);font-family:'Rajdhani',sans-serif;padding:6px 10px;border-radius:3px;font-size:0.85rem">
+                <option value="Found">Found</option>
+                <option value="SEED">SEED</option>
+                <option value="Braidr">Braidr</option>
+                <option value="Disrupt">Disrupt</option>
+                <option value="Culture3">Culture3</option>
+              </select>
+              <select id="pdf-period" style="background:var(--bg-input);border:1px solid var(--border);color:var(--text-primary);font-family:'Rajdhani',sans-serif;padding:6px 10px;border-radius:3px;font-size:0.85rem">
+                <option value="weekly">Weekly</option>
+                <option value="daily">Daily</option>
+                <option value="monthly">Monthly</option>
+              </select>
+              <button class="action-trigger-btn" onclick="downloadPDFAction()">GENERATE & DOWNLOAD PDF</button>
+            </div>
+          </div>
+
+          <!-- Digests -->
+          <div class="widget">
+            <div class="widget-header">
+              <div class="widget-title">Intelligence Digests</div>
+              <div class="widget-badge">Slack delivery</div>
+            </div>
+            <div class="widget-body" style="display:flex;flex-direction:column;gap:8px">
+              <div style="color:var(--text-mid);font-size:0.8rem;margin-bottom:4px">Generate and deliver intelligence digests to Slack</div>
+              <button class="action-trigger-btn" onclick="triggerDigest('morning')">MORNING BRIEF</button>
+              <button class="action-trigger-btn" onclick="triggerDigest('weekly')">WEEKLY SUMMARY</button>
+              <button class="action-trigger-btn" onclick="triggerDigest('monthly')">MONTHLY BOARD REPORT</button>
+            </div>
+          </div>
+
+          <!-- Synthesis -->
+          <div class="widget">
+            <div class="widget-header">
+              <div class="widget-title">Cross-Agency Synthesis</div>
+              <div class="widget-badge">group-level</div>
+            </div>
+            <div class="widget-body" style="display:flex;flex-direction:column;gap:8px">
+              <div style="color:var(--text-mid);font-size:0.8rem;margin-bottom:4px">Analyse patterns across all 5 agencies. Identifies shared threats, knowledge transfer opportunities, and group positioning.</div>
+              <button class="action-trigger-btn" id="synthesis-btn" onclick="triggerSynthesis()">GENERATE SYNTHESIS</button>
+              <div id="synthesis-status" style="font-family:'Share Tech Mono',monospace;font-size:0.7rem;color:var(--text-dim)"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Action Log -->
+        <div class="widget" style="margin-top:12px">
+          <div class="widget-header">
+            <div class="widget-title">Action Log</div>
+            <div class="widget-badge" id="action-log-count">0 actions</div>
+          </div>
+          <div class="widget-body" id="action-log" style="max-height:200px;overflow-y:auto">
+            <div style="color:var(--text-dim);font-size:0.8rem;text-align:center;padding:20px">No actions triggered yet this session</div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -1077,6 +1167,86 @@ async function exportChat() {
     a.href = url; a.download = `mcsa-chat-${new Date().toISOString().slice(0,10)}.md`;
     a.click(); URL.revokeObjectURL(url);
   } catch (e) { console.error('Export failed:', e); }
+}
+
+// ═══════════ ACTIONS ═══════════
+let actionLogCount = 0;
+function logAction(msg, status = 'ok') {
+  const log = document.getElementById('action-log');
+  const ts = new Date().toLocaleTimeString();
+  const color = status === 'ok' ? 'var(--success)' : status === 'error' ? 'var(--red)' : 'var(--orange)';
+  const entry = `<div style="font-family:'Share Tech Mono',monospace;font-size:0.75rem;padding:4px 0;border-bottom:1px solid var(--border);color:${color}">[${ts}] ${msg}</div>`;
+  if (actionLogCount === 0) log.innerHTML = '';
+  log.innerHTML = entry + log.innerHTML;
+  actionLogCount++;
+  document.getElementById('action-log-count').textContent = actionLogCount + ' actions';
+}
+
+function downloadPDF() {
+  const agency = document.getElementById('rpt-agency')?.value || 'Found';
+  if (!agency) { alert('Select an agency first'); return; }
+  const period = document.getElementById('rpt-cadence')?.value || 'weekly';
+  logAction(`Generating PDF for ${agency} (${period})...`, 'pending');
+  window.open(`/api/reports/${agency}/pdf?period=${period}`, '_blank');
+  logAction(`PDF download triggered for ${agency}`, 'ok');
+}
+
+function downloadPDFAction() {
+  const agency = document.getElementById('pdf-agency').value;
+  const period = document.getElementById('pdf-period').value;
+  logAction(`Generating PDF for ${agency} (${period})...`, 'pending');
+  window.open(`/api/reports/${agency}/pdf?period=${period}`, '_blank');
+  logAction(`PDF download triggered for ${agency}`, 'ok');
+}
+
+async function triggerDigest(type) {
+  const btn = event.target;
+  btn.disabled = true;
+  btn.classList.add('running');
+  btn.textContent = 'GENERATING...';
+  logAction(`Triggering ${type} digest...`, 'pending');
+  try {
+    const res = await fetch(`/api/digest/${type}`, { method: 'POST' });
+    const data = await res.json();
+    if (data.status === 'delivered') {
+      logAction(`${type} digest delivered (${data.length} chars)`, 'ok');
+      btn.textContent = 'DELIVERED';
+    } else {
+      logAction(`${type} digest failed: ${data.message || 'unknown error'}`, 'error');
+      btn.textContent = 'FAILED';
+    }
+  } catch (e) {
+    logAction(`${type} digest error: ${e.message}`, 'error');
+    btn.textContent = 'ERROR';
+  }
+  setTimeout(() => { btn.disabled = false; btn.classList.remove('running'); btn.textContent = type === 'morning' ? 'MORNING BRIEF' : type === 'weekly' ? 'WEEKLY SUMMARY' : 'MONTHLY BOARD REPORT'; }, 3000);
+}
+
+async function triggerSynthesis() {
+  const btn = document.getElementById('synthesis-btn');
+  const status = document.getElementById('synthesis-status');
+  btn.disabled = true;
+  btn.classList.add('running');
+  btn.textContent = 'GENERATING...';
+  status.textContent = 'Fetching reports from last 7 days and synthesising...';
+  logAction('Triggering cross-agency synthesis...', 'pending');
+  try {
+    const res = await fetch('/api/synthesis', { method: 'POST' });
+    const data = await res.json();
+    if (data.status === 'delivered') {
+      status.textContent = `Delivered (${data.length} chars). Check Slack #mcsa-general.`;
+      logAction(`Cross-agency synthesis delivered (${data.length} chars)`, 'ok');
+      btn.textContent = 'DELIVERED';
+    } else {
+      status.textContent = data.message || 'Generation failed';
+      logAction('Synthesis failed: ' + (data.message || 'unknown'), 'error');
+      btn.textContent = 'FAILED';
+    }
+  } catch (e) {
+    status.textContent = 'Error: ' + e.message;
+    logAction('Synthesis error: ' + e.message, 'error');
+  }
+  setTimeout(() => { btn.disabled = false; btn.classList.remove('running'); btn.textContent = 'GENERATE SYNTHESIS'; }, 5000);
 }
 
 // ═══════════ INPUT ═══════════

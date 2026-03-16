@@ -914,6 +914,16 @@ async def search_reports_fulltext(q: str, limit: int = 20):
     return {"results": results, "query": q, "count": len(results)}
 
 
+@app.post("/api/synthesis")
+async def api_synthesis():
+    """Trigger cross-agency trend synthesis generation and delivery."""
+    from mcsa.synthesis import run_synthesis
+    content = await run_synthesis()
+    if content:
+        return {"status": "delivered", "length": len(content), "preview": content[:500]}
+    return {"status": "failed", "message": "No reports found or generation failed"}
+
+
 @app.get("/api/reports/{agency}/pdf")
 async def get_report_pdf(agency: str, period: str = "weekly"):
     """Generate and return a client-facing PDF report for an agency.
