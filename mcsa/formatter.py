@@ -169,6 +169,8 @@ def _module_icon(module: str) -> str:
         "industry": "[IND]",
         "diff": "[DIFF]",
         "website": "[WEB]",
+        "content_strategy": "[CS]",
+        "synthesis": "[SYN]",
     }.get(module, "[?]")
 
 
@@ -179,4 +181,6 @@ def _module_title(module: str) -> str:
         "industry": "Industry Publications & Key People",
         "diff": "Competitive DIFF Analysis",
         "website": "Website Pattern Analysis",
+        "content_strategy": "Content Strategy",
+        "synthesis": "Cross-Agency Trend Synthesis",
     }.get(module, module.title())

@@ -40,7 +40,8 @@ def main():
             "  cadence          daily, weekly, or monthly (default: daily)\n"
             "  digest-morning   Generate and deliver Morning Brief\n"
             "  digest-weekly    Generate and deliver Weekly Executive Summary\n"
-            "  digest-monthly   Generate and deliver Monthly Board Report\n\n"
+            "  digest-monthly   Generate and deliver Monthly Board Report\n"
+            "  synthesis        Generate and deliver Cross-Agency Trend Synthesis\n\n"
             "Options:\n"
             "  --agency NAME    Run only for specific agency (repeatable)\n"
             "  --list-agencies  Show configured agencies and exit\n"
@@ -59,8 +60,25 @@ def main():
             console.print(f"  - {a['name']} (MD: {md}) — {a['focus']}")
         sys.exit(0)
 
-    # Handle digest commands
+    # Handle synthesis command
     positional = [a for a in args if not a.startswith("--")]
+    if positional and positional[0].lower() == "synthesis":
+        from mcsa.synthesis import run_synthesis
+        from core.config import validate_config
+        try:
+            validate_config()
+        except ValueError as e:
+            console.print(f"[red]Configuration Error:[/red]\n{e}")
+            sys.exit(1)
+
+        content = asyncio.run(run_synthesis())
+        if content:
+            console.print(f"\n[bold green]Synthesis generated and delivered ({len(content)} chars)[/bold green]")
+        else:
+            console.print(f"\n[yellow]Synthesis generation returned empty[/yellow]")
+        sys.exit(0)
+
+    # Handle digest commands
     if positional and positional[0].startswith("digest-"):
         digest_map = {
             "digest-morning": "morning",

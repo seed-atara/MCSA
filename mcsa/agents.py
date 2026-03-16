@@ -276,7 +276,7 @@ class LinkedInAgent(ResearchAgent):
                 f"({names_str}) LinkedIn content thought leadership recent",
             ]
         else:
-            # Weekly: moderate depth, a few more queries
+            # Weekly: moderate depth, a few more queries + hiring/format signals
             names_str = " OR ".join(f'"{n}"' for n in comp_names[:5])
             queries = [
                 f'site:linkedin.com ({names_str}) posts 2026',
@@ -284,6 +284,9 @@ class LinkedInAgent(ResearchAgent):
                 f"{agency_focus} LinkedIn trending topics UK 2026",
                 f"{agency_focus} LinkedIn thought leadership best content examples",
                 f"{agency_focus} agency LinkedIn engagement trends UK",
+                f'({names_str}) "hiring" OR "we\'re hiring" OR "join our team" LinkedIn',
+                f'({names_str}) "joined" OR "excited to announce" OR "new role" LinkedIn',
+                f'({names_str}) LinkedIn "video" OR "carousel" OR "newsletter" content format',
             ]
 
         search_fn = _gather_for_cadence(cadence)
@@ -321,7 +324,13 @@ class LinkedInAgent(ResearchAgent):
                 f"3. Format breakdown (thought leadership vs promo vs culture)\n"
                 f"4. Posting frequency estimates\n"
                 f"5. Whitespace topics {agency_name} could own\n"
-                f"6. Engagement winners\n\n"
+                f"6. Engagement winners\n"
+                f"7. Content gaps — topics no competitor covers well that {agency_name} could own\n"
+                f"8. Optimal timing — posting frequency estimates and best days/times based on engagement patterns\n"
+                f"9. Format recommendations — which formats (video, carousel, text, newsletter) drive most engagement per topic\n"
+                f"10. Topic authority map — which competitor owns which topic, and where authority is weak or contested\n"
+                f"11. Hiring signals — competitor hiring posts, team growth indicators, new role announcements\n"
+                f"12. Employee movement — key people joining or leaving competitors\n\n"
                 f"FORMAT: Structured markdown for Confluence."
                 f"{_GOVERNANCE}"
             )
@@ -415,7 +424,10 @@ class IndustryAgent(ResearchAgent):
                 f"3. Publication share-of-voice\n"
                 f"4. Editorial themes gaining frequency\n"
                 f"5. Upcoming events\n"
-                f"6. {agency_name} visibility check\n\n"
+                f"6. {agency_name} visibility check\n"
+                f"7. Content whitespace — topics with editorial interest but no agency voice; opportunities for {agency_name} to become the go-to source\n"
+                f"8. Share-of-voice assessment — which competitors are most quoted, by which publications, and trending direction (up/down/stable)\n"
+                f"9. Trending formats — which content formats (webinars, podcasts, reports, bylines, panel appearances) are gaining traction in the sector\n\n"
                 f"FORMAT: Structured markdown for Confluence."
                 f"{_GOVERNANCE}"
             )
@@ -486,10 +498,18 @@ class DIFFAgent(ResearchAgent):
                 f"- Positioning language shifts\n"
                 f"- New narratives being tested\n"
                 f"- Sudden output increases\n"
-                f"- Format shifts\n\n"
+                f"- Format shifts\n"
+                f"- Content format opportunities competitors aren't using (e.g. video, carousel, podcast, webinar)\n\n"
                 f"For each signal: What changed, which competitor, significance (HIGH/MED/LOW), "
                 f"recommended response.\n\n"
-                f"FORMAT: Concise Slack alert. Lead with biggest signal."
+                f"Then add:\n"
+                f"## Content Calendar Recommendations\n"
+                f"- **Immediate (this week):** Quick-win content {agency_name} should publish now in response to competitor moves\n"
+                f"- **Short-term (this month):** Content pieces to develop based on emerging gaps and trends\n"
+                f"- **Strategic (this quarter):** Larger content initiatives to build authority in contested topics\n\n"
+                f"## Share-of-Voice Ranking\n"
+                f"Rank competitors by overall content presence with trend direction (up/down/stable).\n\n"
+                f"FORMAT: Structured markdown for Slack + Confluence."
                 f"{_GOVERNANCE}"
             )
         else:
@@ -697,3 +717,88 @@ class WebsiteAgent(ResearchAgent):
         context["_crawl_results"] = list(zip(crawl_comps, crawl_results))
 
         return report
+
+
+# ---------------------------------------------------------------------------
+# Module 6 — Content Strategy (pure synthesis, no data gathering)
+# ---------------------------------------------------------------------------
+
+class ContentStrategyAgent(ResearchAgent):
+    """Synthesises upstream module outputs into actionable content strategy.
+
+    Pure analysis — receives linkedin, industry, website, and diff reports
+    as context and produces 5W1H content recommendations. Runs weekly/monthly only.
+    """
+
+    def __init__(self):
+        super().__init__(
+            "Content Strategy Agent",
+            "Produces actionable content strategy from competitive intelligence",
+        )
+
+    async def research(self, agency: dict, context: dict) -> str:
+        agency_name = agency["name"]
+        agency_focus = agency.get("focus", "")
+        competitors = context.get("competitors", [])
+        cadence = context.get("cadence", "weekly")
+
+        linkedin_report = context.get("linkedin_report", "")
+        industry_report = context.get("industry_report", "")
+        website_report = context.get("website_report", "")
+        diff_report = context.get("diff_report", "")
+
+        comp_list = ", ".join(c.get("name", "?") for c in competitors)
+
+        # Cap upstream reports to avoid token bloat
+        upstream_limit = 8000 if cadence == "weekly" else 12000
+        upstream_context = ""
+        if linkedin_report:
+            upstream_context += f"\n\n## LINKEDIN INTELLIGENCE\n{linkedin_report[:upstream_limit]}"
+        if industry_report:
+            upstream_context += f"\n\n## INDUSTRY INTELLIGENCE\n{industry_report[:upstream_limit]}"
+        if website_report:
+            upstream_context += f"\n\n## WEBSITE INTELLIGENCE\n{website_report[:upstream_limit]}"
+        if diff_report:
+            upstream_context += f"\n\n## COMPETITIVE DIFF\n{diff_report[:upstream_limit]}"
+
+        system = (
+            f"You are a content strategist for {agency_name} (Tomorrow Group), "
+            f"specialising in {agency_focus}.\n\n"
+            f"TASK: Produce an actionable content strategy based on competitive intelligence.\n"
+            f"Competitors: {comp_list}\n\n"
+            f"Structure your output using the 5W1H framework:\n\n"
+            f"## WHO Should Post\n"
+            f"- Which person or channel should publish (MD, specific team members, company page, "
+            f"personal brands)? Match the messenger to the message.\n\n"
+            f"## WHAT Topics (ranked by priority)\n"
+            f"- **First-mover:** Topics no competitor covers yet — {agency_name} can own these\n"
+            f"- **Defensive:** Topics where competitors are gaining ground — {agency_name} must respond\n"
+            f"- **Recovery:** Topics where {agency_name} has lost share-of-voice — plan to reclaim\n\n"
+            f"## WHY Each Matters\n"
+            f"- Tie every recommendation to specific competitive intelligence (e.g. 'Competitor X "
+            f"just published Y, which threatens our positioning on Z')\n\n"
+            f"## WHEN to Publish\n"
+            f"- **This week:** Immediate actions — reactive content responding to competitor moves\n"
+            f"- **This month:** Planned content pieces to build on identified gaps\n"
+            f"- **This quarter:** Strategic content initiatives for sustained authority\n\n"
+            f"## WHERE to Publish\n"
+            f"- LinkedIn (company page vs personal), blog, industry publications, conference "
+            f"stages, podcast appearances, newsletter\n\n"
+            f"## HOW to Format\n"
+            f"- Video, carousel, long-form thought leadership, case study, data report, "
+            f"infographic, webinar — match format to platform and topic\n\n"
+            f"Then provide:\n\n"
+            f"## Immediate Actions (This Week)\n"
+            f"Specific, named actions with owner, topic, format, and platform. "
+            f"Each action should be directly tied to a competitive signal.\n\n"
+            f"## Short-Term Plan (This Month)\n"
+            f"Content pieces to develop, with rationale from the intelligence data.\n\n"
+            f"## Strategic Bets (This Quarter)\n"
+            f"Larger initiatives to build lasting authority in key areas.\n\n"
+            f"Be specific and actionable — not generic advice. Every recommendation must "
+            f"reference specific competitive intelligence from the data provided."
+            f"{_GOVERNANCE}"
+        )
+
+        user = f"COMPETITIVE INTELLIGENCE DATA:{upstream_context}"
+        return await self._call_claude(system, user, max_tokens=_max_tokens(cadence), context=context)

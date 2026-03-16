@@ -136,8 +136,11 @@ def generate_morning_brief() -> str:
         "overnight, each with 1-2 sentences of context and why it matters.\n"
         "2. **Agency Highlights** — one bullet per agency that had activity, "
         "noting the key development.\n"
-        "3. **Action Items** — any items that require a response today.\n\n"
-        "Keep it under 500 words. Be direct and specific — this is read at 8am "
+        "3. **Action Items** — any items that require a response today.\n"
+        "4. **Content Actions** — specific content to post today and why. "
+        "Format: 'Post about X today because competitor Y just did Z'. "
+        "Include who should post, on which platform, and what angle to take.\n\n"
+        "Keep it under 600 words. Be direct and specific — this is read at 8am "
         "by busy executives. Use markdown formatting."
     )
 
@@ -174,8 +177,11 @@ def generate_weekly_summary() -> str:
         "competitive movements, threats, and opportunities.\n"
         "4. **Strategic Implications** — what these trends mean for Tomorrow "
         "Group's positioning, and any recommended strategic responses.\n"
-        "5. **Watch List** — 2-3 things to monitor closely next week.\n\n"
-        "Keep it under 1000 words. Use markdown formatting. Be analytical, "
+        "5. **Watch List** — 2-3 things to monitor closely next week.\n"
+        "6. **Content Strategy Priorities** — this week's priority topics, "
+        "angles, and formats. For each: who should post (MD, team, company page), "
+        "what platform, and what format (video, carousel, article, etc.).\n\n"
+        "Keep it under 1200 words. Use markdown formatting. Be analytical, "
         "not just descriptive — interpret the signals."
     )
 

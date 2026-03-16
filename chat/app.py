@@ -16,7 +16,7 @@ from pathlib import Path
 from datetime import datetime
 
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, StreamingResponse, Response
 import anthropic
 from supabase import create_client
 
@@ -65,7 +65,7 @@ TOOLS = [
                 },
                 "module": {
                     "type": "string",
-                    "enum": ["linkedin", "industry", "website", "diff", "registry"],
+                    "enum": ["linkedin", "industry", "website", "diff", "registry", "content_strategy", "synthesis"],
                     "description": "Report module to filter by. Omit for all modules.",
                 },
                 "cadence": {
@@ -136,7 +136,7 @@ TOOLS = [
                 },
                 "module": {
                     "type": "string",
-                    "enum": ["linkedin", "industry", "website", "diff", "registry"],
+                    "enum": ["linkedin", "industry", "website", "diff", "registry", "content_strategy"],
                     "description": "Module to compare across agencies.",
                 },
             },
@@ -912,6 +912,39 @@ async def search_reports_fulltext(q: str, limit: int = 20):
         })
 
     return {"results": results, "query": q, "count": len(results)}
+
+
+@app.get("/api/reports/{agency}/pdf")
+async def get_report_pdf(agency: str, period: str = "weekly"):
+    """Generate and return a client-facing PDF report for an agency.
+
+    Query params:
+        period: weekly (default), daily, or monthly
+    """
+    valid_periods = ("daily", "weekly", "monthly")
+    if period not in valid_periods:
+        return {"error": f"Invalid period. Must be one of: {', '.join(valid_periods)}"}
+
+    # Validate agency name
+    valid_agencies = {"Found", "SEED", "Braidr", "Disrupt", "Culture3"}
+    if agency not in valid_agencies:
+        return {"error": f"Unknown agency '{agency}'. Must be one of: {', '.join(sorted(valid_agencies))}"}
+
+    try:
+        from mcsa.pdf_report import generate_pdf
+        pdf_bytes = generate_pdf(agency, period)
+
+        if not pdf_bytes:
+            return {"error": "No report data available for this agency and period."}
+
+        filename = f"MCSA_{agency}_{period}_{datetime.now().strftime('%Y%m%d')}.pdf"
+        return Response(
+            content=pdf_bytes,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+    except Exception as e:
+        return {"error": f"PDF generation failed: {e}"}
 
 
 @app.get("/api/reports/{report_id}")

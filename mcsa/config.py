@@ -175,6 +175,8 @@ REPORTS: list[dict] = [
     # Module 5 — Website
     {"module": "website", "name": "Competitor Content Alert", "cadence": CADENCE_DAILY, "channel": "slack", "audience": "Marketing Leads"},
     {"module": "website", "name": "Website Pattern Report", "cadence": CADENCE_WEEKLY, "channel": "confluence", "audience": "Agency MDs"},
+    # Module 6 — Content Strategy
+    {"module": "content_strategy", "name": "Content Strategy Brief", "cadence": CADENCE_WEEKLY, "channel": "slack+confluence", "audience": "Agency MDs + Marketing Leads"},
 ]
 
 # ---------------------------------------------------------------------------

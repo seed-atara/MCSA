@@ -18,7 +18,7 @@ from core.tools import clear_sources, get_all_sources
 from core.cost_tracker import cost_tracker
 
 from .config import AGENCIES, REPORTS, CADENCE_DAILY, CADENCE_WEEKLY, CADENCE_MONTHLY
-from .agents import RegistryAgent, LinkedInAgent, IndustryAgent, DIFFAgent, WebsiteAgent
+from .agents import RegistryAgent, LinkedInAgent, IndustryAgent, DIFFAgent, WebsiteAgent, ContentStrategyAgent
 from . import storage
 from . import formatter
 from .slack import deliver_to_slack
@@ -60,6 +60,7 @@ class MCSAOrchestrator:
         self.industry_agent = IndustryAgent()
         self.diff_agent = DIFFAgent()
         self.website_agent = WebsiteAgent()
+        self.content_strategy_agent = ContentStrategyAgent()
 
     def _report_progress(self, phase: int, total: int, description: str) -> None:
         if self.progress_callback:
@@ -278,6 +279,27 @@ class MCSAOrchestrator:
             except Exception as e:
                 console.print(f"[red]  DIFF failed: {e}[/red]")
                 reports["diff"] = f"[Error: {e}]"
+
+        # ── Phase 4: Content Strategy (depends on phase 2+3) ─────────────
+        if cadence in (CADENCE_WEEKLY, CADENCE_MONTHLY):
+            console.print(f"[dim]  Module 6: Content Strategy[/dim]")
+            cs_ctx = {
+                "competitors": competitors,
+                "cadence": cadence,
+                "linkedin_report": reports.get("linkedin", ""),
+                "industry_report": reports.get("industry", ""),
+                "website_report": reports.get("website", ""),
+                "diff_report": reports.get("diff", ""),
+            }
+            try:
+                cs_report = await self.content_strategy_agent.research(agency, cs_ctx)
+                reports["content_strategy"] = cs_report
+                path = storage.save_report(agency_name, "content_strategy", cadence, cs_report)
+                _save_formatted(agency_name, "content_strategy", cadence, cs_report, path)
+                console.print(f"[green]  Content Strategy: {len(cs_report)} chars -> {path.name}[/green]")
+            except Exception as e:
+                console.print(f"[red]  Content Strategy failed: {e}[/red]")
+                reports["content_strategy"] = f"[Error: {e}]"
 
         return reports
 
