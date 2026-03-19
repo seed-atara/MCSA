@@ -108,6 +108,26 @@ Available gstack skills:
 - `/setup-browser-cookies` — configure browser auth cookies
 - `/retro` — retrospective
 
+## Memory System
+
+A persistent memory system exists at `~/.claude/projects/.../memory/`. **At the start of every session**, read `MEMORY.md` (the index) and any relevant memory files before starting work. **At the end of a session** (or when significant decisions/learnings occur), update or create memory files as needed.
+
+### Memory Files
+- `MEMORY.md` — Index of all memory files (always read first)
+- `decisions.md` — Key architectural and product decisions
+- `people.md` — People involved, their roles, and collaboration context
+- `preferences.md` — User's communication style, code preferences, workflow habits
+- `user_johannes.md` — Primary user profile
+- `project_*.md` — Project status, infrastructure, and setup details
+- `feedback_*.md` — Behavioral rules from past corrections
+- `reference_*.md` — Pointers to external systems and resources
+
+### Rules
+- Read `MEMORY.md` at session start to load context
+- Update memory files when decisions are made, preferences change, or new people/context emerge
+- New memories get their own file with frontmatter (name, description, type) and a pointer in `MEMORY.md`
+- Never duplicate — update existing files when possible
+
 ## Known Technical Debt
 
 - `src/agents.py` is monolithic (~3,400+ lines) — see TODO.md for split plan

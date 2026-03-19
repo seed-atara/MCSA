@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from datetime import date
 from rich.console import Console
 
 from core.agent import ResearchAgent
@@ -42,15 +43,22 @@ def _valid_website(url: str) -> bool:
     return bool(url) and url.strip().lower() not in _INVALID_WEBSITES
 
 
-# Shared governance footer appended to every system prompt
-_GOVERNANCE = (
-    "\n\n--- GOVERNANCE ---\n"
-    "All data is from publicly accessible sources only. No authenticated access.\n"
-    "Output is classified Internal — not for client distribution without MD review.\n"
-    "Include a CONFIDENCE label (HIGH / MEDIUM / LOW) for each major claim.\n"
-    "If data is insufficient to make a claim, say so explicitly rather than speculating.\n"
-    "--- END GOVERNANCE ---"
-)
+def _governance() -> str:
+    """Shared governance footer appended to every system prompt, with today's date."""
+    today = date.today().strftime("%A %d %B %Y")  # e.g. "Wednesday 19 March 2026"
+    return (
+        f"\n\n--- GOVERNANCE ---\n"
+        f"TODAY'S DATE: {today}. Use this date for all report headers and references.\n"
+        f"All data is from publicly accessible sources only. No authenticated access.\n"
+        f"Output is classified Internal — not for client distribution without MD review.\n"
+        f"Include a CONFIDENCE label (HIGH / MEDIUM / LOW) for each major claim.\n"
+        f"If data is insufficient to make a claim, say so explicitly rather than speculating.\n"
+        f"--- END GOVERNANCE ---"
+    )
+
+
+# Keep backward-compat reference for any external usage
+_GOVERNANCE = _governance()
 
 # ---------------------------------------------------------------------------
 # Token budget constants by cadence
@@ -228,7 +236,7 @@ class RegistryAgent(ResearchAgent):
             f"OUTPUT: First a ```json``` array, then markdown summary with changes, "
             f"review checklist, and data gaps."
             f"{manual_section}"
-            f"{_GOVERNANCE}"
+            + _governance()
         )
 
         user = f"RESEARCH DATA:\n{combined[:_MONTHLY_CONTEXT_LIMIT]}{existing_json}"
@@ -311,7 +319,7 @@ class LinkedInAgent(ResearchAgent):
                 f"Then: Top 3 trending topics in {agency_focus} on LinkedIn.\n"
                 f"Signal vs noise verdict: 1 sentence.\n\n"
                 f"FORMAT: Concise bullets for Slack. If no activity detected, say so."
-                f"{_GOVERNANCE}"
+                + _governance()
             )
         else:
             system = (
@@ -332,7 +340,7 @@ class LinkedInAgent(ResearchAgent):
                 f"11. Hiring signals — competitor hiring posts, team growth indicators, new role announcements\n"
                 f"12. Employee movement — key people joining or leaving competitors\n\n"
                 f"FORMAT: Structured markdown for Confluence."
-                f"{_GOVERNANCE}"
+                + _governance()
             )
 
         ctx_limit = _context_limit(cadence)
@@ -411,7 +419,7 @@ class IndustryAgent(ResearchAgent):
                 f"- Relevant events\n\n"
                 f"FORMAT: Concise Slack alert. Most important first.\n"
                 f"If nothing significant: 'No major signals today'."
-                f"{_GOVERNANCE}"
+                + _governance()
             )
         else:
             system = (
@@ -429,7 +437,7 @@ class IndustryAgent(ResearchAgent):
                 f"8. Share-of-voice assessment — which competitors are most quoted, by which publications, and trending direction (up/down/stable)\n"
                 f"9. Trending formats — which content formats (webinars, podcasts, reports, bylines, panel appearances) are gaining traction in the sector\n\n"
                 f"FORMAT: Structured markdown for Confluence."
-                f"{_GOVERNANCE}"
+                + _governance()
             )
 
         ctx_limit = _context_limit(cadence)
@@ -461,11 +469,22 @@ class DIFFAgent(ResearchAgent):
         prior_diff = context.get("prior_report", "")
 
         # Search for Tomorrow's own output to compare against
-        queries = [
-            f'"{agency_name}" blog OR content OR "case study" 2026',
-            f'site:linkedin.com/company "{agency_name}" posts',
-            f'"{agency_name}" website services about',
-        ]
+        # Use website domain when available to avoid generic name collisions
+        # (e.g. "SEED" or "Found" return irrelevant results)
+        agency_website = agency.get("website", "")
+        if agency_website:
+            search_id = f"site:{agency_website}"
+            queries = [
+                f'{search_id} blog OR content OR "case study"',
+                f'site:linkedin.com/company "{agency_name}" agency',
+                f'{search_id} services about',
+            ]
+        else:
+            queries = [
+                f'"{agency_name}" agency blog OR content OR "case study" 2026',
+                f'site:linkedin.com/company "{agency_name}" posts',
+                f'"{agency_name}" agency website services about',
+            ]
 
         search_fn = _gather_for_cadence(cadence)
         combined = await search_fn(queries)
@@ -510,7 +529,7 @@ class DIFFAgent(ResearchAgent):
                 f"## Share-of-Voice Ranking\n"
                 f"Rank competitors by overall content presence with trend direction (up/down/stable).\n\n"
                 f"FORMAT: Structured markdown for Slack + Confluence."
-                f"{_GOVERNANCE}"
+                + _governance()
             )
         else:
             system = (
@@ -526,7 +545,7 @@ class DIFFAgent(ResearchAgent):
                 f"6. Top 3 content opportunities\n"
                 f"7. Trend vs prior month\n\n"
                 f"FORMAT: Structured markdown for Confluence + Slack summary."
-                f"{_GOVERNANCE}"
+                + _governance()
             )
 
         ctx_limit = _context_limit(cadence)
@@ -627,7 +646,7 @@ class WebsiteAgent(ResearchAgent):
             f"For each: title, category, 1-sentence summary.\n\n"
             f"FORMAT: Concise Slack alert. Group by competitor.\n"
             f"If nothing new: 'No new competitor content detected today'."
-            f"{_GOVERNANCE}"
+            + _governance()
         )
 
         user = f"WEBSITE DATA:\n{combined[:_DAILY_CONTEXT_LIMIT]}"
@@ -706,7 +725,7 @@ class WebsiteAgent(ResearchAgent):
             f"5. SEO signals\n"
             f"6. {agency_name} comparison\n\n"
             f"FORMAT: Structured markdown for Confluence."
-            f"{_GOVERNANCE}"
+            + _governance()
         )
 
         user = f"WEBSITE CRAWL DATA:\n{combined[:_WEEKLY_CONTEXT_LIMIT]}{prior_context}"
@@ -797,7 +816,7 @@ class ContentStrategyAgent(ResearchAgent):
             f"Larger initiatives to build lasting authority in key areas.\n\n"
             f"Be specific and actionable — not generic advice. Every recommendation must "
             f"reference specific competitive intelligence from the data provided."
-            f"{_GOVERNANCE}"
+            + _governance()
         )
 
         user = f"COMPETITIVE INTELLIGENCE DATA:{upstream_context}"

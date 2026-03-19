@@ -31,6 +31,7 @@ AGENCIES: list[dict] = [
         "md": "Natalie",
         "champion": "Ric",
         "headcount": 70,
+        "website": "www.found.co.uk",
         "focus": "SEO, PPC, digital performance marketing",
         "competitor_guidance": (
             "UK-based SEO and PPC agencies. Direct service competitors "
@@ -53,6 +54,7 @@ AGENCIES: list[dict] = [
         "md": None,
         "champion": None,
         "headcount": None,
+        "website": "www.seedstudios.ai",
         "focus": "Content strategy, social media, creative production",
         "competitor_guidance": (
             "UK-based social media and content agencies. Competitors that win "
@@ -72,6 +74,7 @@ AGENCIES: list[dict] = [
         "md": None,
         "champion": None,
         "headcount": None,
+        "website": "braidr.ai",
         "focus": "Data, analytics, marketing science",
         "competitor_guidance": (
             "UK-based data and analytics agencies or consultancies. Competitors "
@@ -99,6 +102,7 @@ AGENCIES: list[dict] = [
         "md": None,
         "champion": None,
         "headcount": None,
+        "website": "disruptmarketing.co",
         "focus": "Paid media, programmatic advertising",
         "competitor_guidance": (
             "UK-based paid media and programmatic agencies. Competitors that plan "
@@ -119,6 +123,7 @@ AGENCIES: list[dict] = [
         "md": None,
         "champion": None,
         "headcount": None,
+        "website": "www.culture3.com",
         "focus": "Web3, emerging technology, innovation",
         "competitor_guidance": (
             "Web3 marketing and strategy agencies. Competitors offering Web3 "
