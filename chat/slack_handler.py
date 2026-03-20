@@ -404,7 +404,65 @@ TOOL TIPS:
   detailed intelligence in the actual reports (e.g. search_text="linkedin algorithm")
 - Combine multiple tool calls when needed — e.g. get topics first, then search reports
   for details on a specific topic
-- Be specific and actionable — tie insights to what the agency should DO about them"""
+- Be specific and actionable — tie insights to what the agency should DO about them
+- When you know which agency the user is asking about (from channel context),
+  ALWAYS pass the agency name to your tool calls — don't ask the user to specify it"""
+
+
+# ---------------------------------------------------------------------------
+# Channel → Agency mapping
+# ---------------------------------------------------------------------------
+
+# Map channel names to agency names. Channel IDs change if recreated,
+# so we resolve by channel name pattern instead.
+_CHANNEL_AGENCY_MAP = {
+    "mcsa-found": "Found",
+    "mcsa-seed": "SEED",
+    "mcsa-braidr": "Braidr",
+    "mcsa-disrupt": "Disrupt",
+    "mcsa-culture3": "Culture3",
+}
+
+# Cache: channel_id → channel_name (populated on first lookup)
+_channel_name_cache: dict[str, str] = {}
+
+
+def _resolve_agency_from_channel(channel_id: str) -> str | None:
+    """Resolve which agency a channel belongs to. Returns None for general/alerts/unknown."""
+    # Check cache first
+    if channel_id in _channel_name_cache:
+        channel_name = _channel_name_cache[channel_id]
+    else:
+        # Look up channel name via Slack API
+        bot_token = os.getenv("SLACK_MCSA_BOT_TOKEN", "")
+        channel_name = ""
+        if bot_token:
+            try:
+                req = urllib.request.Request(
+                    f"https://slack.com/api/conversations.info?channel={channel_id}",
+                    headers={"Authorization": f"Bearer {bot_token}"},
+                )
+                with urllib.request.urlopen(req, timeout=10) as resp:
+                    data = json.loads(resp.read())
+                    if data.get("ok"):
+                        channel_name = data["channel"].get("name", "")
+            except Exception:
+                pass
+        _channel_name_cache[channel_id] = channel_name
+
+    return _CHANNEL_AGENCY_MAP.get(channel_name)
+
+
+def _build_system_prompt(channel_id: str) -> str:
+    """Build system prompt with channel agency context."""
+    agency = _resolve_agency_from_channel(channel_id)
+    if agency:
+        return (
+            SYSTEM_PROMPT + f"\n\nCHANNEL CONTEXT: You are in the #{_channel_name_cache.get(channel_id, '?')} channel. "
+            f"The user is asking about *{agency}* agency unless they specify otherwise. "
+            f"Always default to {agency} when calling tools that need an agency parameter."
+        )
+    return SYSTEM_PROMPT
 
 
 # ---------------------------------------------------------------------------
@@ -865,7 +923,7 @@ def _process_command(
                     response = claude_client.messages.create(
                         model=MODEL,
                         max_tokens=2048,  # Concise for Slack
-                        system=SYSTEM_PROMPT,
+                        system=_build_system_prompt(channel_id),
                         messages=messages,
                         tools=TOOLS,
                     )
@@ -1099,7 +1157,7 @@ def _process_event(text: str, user_id: str, channel_id: str, thread_ts: str | No
                     response = claude_client.messages.create(
                         model=MODEL,
                         max_tokens=2048,
-                        system=SYSTEM_PROMPT,
+                        system=_build_system_prompt(channel_id),
                         messages=messages,
                         tools=TOOLS,
                     )
@@ -1195,18 +1253,23 @@ async def slack_command(request: Request):
         return {
             "response_type": "ephemeral",
             "text": (
-                "*MCSA Intelligence Analyst*\n\n"
-                "Usage: `/mcsa <your question>`\n\n"
-                "Examples:\n"
-                "• `/mcsa what are the latest threats to Found?`\n"
-                "• `/mcsa compare linkedin activity across all agencies`\n"
-                "• `/mcsa any new alerts this week?`\n"
-                "• `/mcsa show competitor registry for SEED`\n"
-                "• `/mcsa what changed on competitor websites recently?`\n\n"
-                "Conversation commands:\n"
+                "*MCSA Intelligence Analyst* :robot_face:\n\n"
+                "*Two ways to talk to me:*\n"
+                "• `/mcsa <question>` — slash command (response visible to all)\n"
+                "• `@MCSA Intelligence <question>` — mention me in any channel\n\n"
+                "*In agency channels* (#mcsa-found, #mcsa-seed, etc.) I automatically know "
+                "which agency you're asking about — no need to specify.\n\n"
+                "*Examples:*\n"
+                "• `what are the trending topics?` — shows topics for this channel's agency\n"
+                "• `what should we post this week?` — content suggestions\n"
+                "• `draft a LinkedIn post about AI` — generates a ready-to-publish draft\n"
+                "• `show me the content calendar` — weekly content plan\n"
+                "• `who are the key people we're tracking?` — thought leaders\n"
+                "• `any new alerts?` — competitive signals\n"
+                "• `compare linkedin activity across all agencies`\n\n"
+                "*Conversation commands:*\n"
                 "• `/mcsa new` — start a fresh conversation\n"
-                "• `/mcsa reset` — clear conversation history\n"
-                "• `/mcsa history` — show conversation stats"
+                "• `/mcsa reset` — clear conversation history"
             ),
         }
 
