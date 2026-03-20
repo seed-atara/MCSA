@@ -331,8 +331,13 @@ You are responding via Slack. Keep responses concise and well-formatted for Slac
 You have tools to query the intelligence database. Always fetch data before answering.
 When you don't have data, say so clearly.
 
-You can also query trending topics — use the get_trending_topics tool to see what topics
-are rising or falling in each agency's vertical. Use this to make content recommendations."""
+TOOL TIPS:
+- Use get_trending_topics to see what topics are rising/falling per agency
+- When the user asks about a specific topic, use search_reports with search_text to find
+  detailed intelligence in the actual reports (e.g. search_text="linkedin algorithm")
+- Combine multiple tool calls when needed — e.g. get topics first, then search reports
+  for details on a specific topic
+- Be specific and actionable — tie insights to what the agency should DO about them"""
 
 
 # ---------------------------------------------------------------------------
@@ -377,8 +382,14 @@ def _tool_search_reports(sb, params: dict) -> str:
         content = r.get("content", "")
         if search_text and search_text not in content.lower():
             continue
-        # Truncate content aggressively for Slack token budget
-        preview = content[:500] if len(content) > 500 else content
+        # When searching, show context around the match; otherwise show more of the report
+        if search_text:
+            idx = content.lower().index(search_text)
+            start = max(0, idx - 300)
+            end = min(len(content), idx + len(search_text) + 700)
+            preview = ("..." if start > 0 else "") + content[start:end] + ("..." if end < len(content) else "")
+        else:
+            preview = content[:1500] if len(content) > 1500 else content
         results.append(
             f"### {r['agency_name']} — {r['cadence']} {r['module']} ({r['created_at'][:10]})\n{preview}"
         )
