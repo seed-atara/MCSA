@@ -389,3 +389,72 @@ def save_run_log(cadence: str, agencies: list[str], cost: dict, duration_seconds
 def _safe(name: str) -> str:
     """Make a name filesystem-safe."""
     return name.strip().replace(" ", "-").replace("/", "-").replace("\\", "-")
+
+
+# ---------------------------------------------------------------------------
+# Topics (Topic Intelligence)
+# ---------------------------------------------------------------------------
+
+def save_topics(agency_name: str, topics: list[dict]) -> None:
+    """Upsert topics for an agency. Each topic dict should have at minimum:
+    topic, category, momentum, mention_count, confidence, relevance, sources.
+    """
+    now = datetime.now().isoformat()
+
+    for t in topics:
+        topic_name = t.get("topic", "").strip()
+        if not topic_name:
+            continue
+
+        row = {
+            "agency_name": agency_name,
+            "topic": topic_name,
+            "category": t.get("category", ""),
+            "momentum": t.get("momentum", "stable"),
+            "mention_count": t.get("mention_count", 1),
+            "confidence": t.get("confidence", "MEDIUM"),
+            "relevance": t.get("relevance", ""),
+            "sources": t.get("sources", []),
+            "last_seen_at": now,
+            "updated_at": now,
+        }
+
+        _sb_upsert("topics", row, on_conflict="agency_name,topic")
+
+
+def load_topics(agency_name: str, momentum: str | None = None, limit: int = 20) -> list[dict]:
+    """Load topics for an agency, optionally filtered by momentum."""
+    sb = _get_supabase()
+    if not sb:
+        return []
+    try:
+        query = sb.table("topics").select("*").eq("agency_name", agency_name)
+        if momentum:
+            query = query.eq("momentum", momentum)
+        query = query.order("last_seen_at", desc=True).limit(limit)
+        result = query.execute()
+        return result.data or []
+    except Exception as e:
+        console.print(f"[yellow]Topics load failed: {e}[/yellow]")
+        return []
+
+
+def load_all_topics(limit_per_agency: int = 10) -> dict[str, list[dict]]:
+    """Load topics grouped by agency."""
+    sb = _get_supabase()
+    if not sb:
+        return {}
+    try:
+        query = sb.table("topics").select("*").order("last_seen_at", desc=True).limit(200)
+        result = query.execute()
+        grouped: dict[str, list[dict]] = {}
+        for row in (result.data or []):
+            agency = row.get("agency_name", "?")
+            if agency not in grouped:
+                grouped[agency] = []
+            if len(grouped[agency]) < limit_per_agency:
+                grouped[agency].append(row)
+        return grouped
+    except Exception as e:
+        console.print(f"[yellow]All topics load failed: {e}[/yellow]")
+        return {}

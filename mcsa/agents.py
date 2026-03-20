@@ -821,3 +821,95 @@ class ContentStrategyAgent(ResearchAgent):
 
         user = f"COMPETITIVE INTELLIGENCE DATA:{upstream_context}"
         return await self._call_claude(system, user, max_tokens=_max_tokens(cadence), context=context)
+
+
+# ---------------------------------------------------------------------------
+# Module 7 — Topic Intelligence
+# ---------------------------------------------------------------------------
+
+class TopicIntelligenceAgent(ResearchAgent):
+    """Extracts and tracks trending topics from upstream reports."""
+
+    def __init__(self):
+        super().__init__(
+            "Topic Intelligence Agent",
+            "Extracts trending topics with momentum scoring from surveillance reports",
+        )
+
+    async def research(self, agency: dict, context: dict) -> str:
+        agency_name = agency["name"]
+        agency_focus = agency.get("focus", "")
+        cadence = context.get("cadence", "weekly")
+
+        # Gather all upstream reports as context
+        linkedin_report = context.get("linkedin_report", "")
+        industry_report = context.get("industry_report", "")
+        website_report = context.get("website_report", "")
+        diff_report = context.get("diff_report", "")
+        content_strategy_report = context.get("content_strategy_report", "")
+
+        # Load previous topics for momentum comparison
+        previous_topics = context.get("previous_topics", "")
+        prev_context = ""
+        if previous_topics:
+            prev_context = f"\n\nPREVIOUS TOPIC LIST (compare for momentum):\n{previous_topics}"
+
+        upstream_limit = 8000 if cadence == "weekly" else 12000
+        upstream_context = ""
+        if linkedin_report:
+            upstream_context += f"\n\n## LINKEDIN INTELLIGENCE\n{linkedin_report[:upstream_limit]}"
+        if industry_report:
+            upstream_context += f"\n\n## INDUSTRY INTELLIGENCE\n{industry_report[:upstream_limit]}"
+        if website_report:
+            upstream_context += f"\n\n## WEBSITE INTELLIGENCE\n{website_report[:upstream_limit]}"
+        if diff_report:
+            upstream_context += f"\n\n## COMPETITIVE DIFF\n{diff_report[:upstream_limit]}"
+        if content_strategy_report:
+            upstream_context += f"\n\n## CONTENT STRATEGY\n{content_strategy_report[:upstream_limit]}"
+
+        system = (
+            f"You are a topic intelligence analyst for {agency_name} (Tomorrow Group), "
+            f"specialising in {agency_focus}.\n\n"
+            f"TASK: Extract the most important trending topics from the competitive intelligence data.\n\n"
+            f"For each topic, assess:\n"
+            f"- **momentum**: 'rising' (gaining traction), 'falling' (declining), 'stable' (consistent), 'new' (first appearance)\n"
+            f"- **category**: e.g. 'technology', 'strategy', 'regulation', 'creative', 'measurement', 'platform'\n"
+            f"- **mention_count**: how many times this topic appears across the data\n"
+            f"- **relevance**: why this matters for {agency_name}\n"
+            f"- **sources**: which reports/competitors referenced this topic\n\n"
+            f"OUTPUT FORMAT:\n"
+            f"First, output a ```json``` block containing an array of 10-20 topics:\n"
+            f"```json\n"
+            f"[\n"
+            f'  {{"topic": "AI-powered content creation", "category": "technology", '
+            f'"momentum": "rising", "mention_count": 5, "confidence": "HIGH", '
+            f'"relevance": "Competitors adopting AI workflows", '
+            f'"sources": ["LinkedIn: ClickSlice", "Industry: Marketing Week"]}}\n'
+            f"]\n"
+            f"```\n\n"
+            f"Then provide a markdown summary:\n"
+            f"## Rising Topics\n"
+            f"Topics gaining momentum — {agency_name} should act on these.\n\n"
+            f"## Stable Topics\n"
+            f"Ongoing themes — maintain presence.\n\n"
+            f"## Falling Topics\n"
+            f"Declining interest — deprioritise or find a fresh angle.\n\n"
+            f"## New Topics\n"
+            f"Emerging signals — early mover opportunity.\n\n"
+            f"## Strategic Recommendations\n"
+            f"Top 3 topics {agency_name} should prioritise and why."
+            + _governance()
+        )
+
+        user = f"COMPETITIVE INTELLIGENCE DATA:{upstream_context}{prev_context}"
+        return await self._call_claude(system, user, max_tokens=_max_tokens(cadence), context=context)
+
+    def parse_topics_json(self, report: str) -> list[dict]:
+        """Extract the JSON topics array from a topic intelligence report."""
+        try:
+            start = report.index("```json") + 7
+            end = report.index("```", start)
+            return json.loads(report[start:end].strip())
+        except (ValueError, json.JSONDecodeError) as e:
+            console.print(f"[yellow]  Topic JSON parse failed: {e}[/yellow]")
+            return []

@@ -7,6 +7,7 @@ reports and registries, and performing website change detection.
 from __future__ import annotations
 
 import asyncio
+import json
 import time
 from datetime import datetime
 from pathlib import Path
@@ -18,7 +19,7 @@ from core.tools import clear_sources, get_all_sources
 from core.cost_tracker import cost_tracker
 
 from .config import AGENCIES, REPORTS, CADENCE_DAILY, CADENCE_WEEKLY, CADENCE_MONTHLY
-from .agents import RegistryAgent, LinkedInAgent, IndustryAgent, DIFFAgent, WebsiteAgent, ContentStrategyAgent
+from .agents import RegistryAgent, LinkedInAgent, IndustryAgent, DIFFAgent, WebsiteAgent, ContentStrategyAgent, TopicIntelligenceAgent
 from . import storage
 from . import formatter
 from .slack import deliver_to_slack
@@ -61,6 +62,7 @@ class MCSAOrchestrator:
         self.diff_agent = DIFFAgent()
         self.website_agent = WebsiteAgent()
         self.content_strategy_agent = ContentStrategyAgent()
+        self.topic_intelligence_agent = TopicIntelligenceAgent()
 
     def _report_progress(self, phase: int, total: int, description: str) -> None:
         if self.progress_callback:
@@ -300,6 +302,46 @@ class MCSAOrchestrator:
             except Exception as e:
                 console.print(f"[red]  Content Strategy failed: {e}[/red]")
                 reports["content_strategy"] = f"[Error: {e}]"
+
+        # ── Phase 5: Topic Intelligence (depends on all above) ─────────
+        if cadence in (CADENCE_WEEKLY, CADENCE_MONTHLY):
+            console.print(f"[dim]  Module 7: Topic Intelligence[/dim]")
+            # Load previous topics for momentum comparison
+            prev_topics = storage.load_topics(agency_name, limit=30)
+            prev_topics_str = ""
+            if prev_topics:
+                prev_topics_str = json.dumps(
+                    [{"topic": t["topic"], "momentum": t["momentum"],
+                      "category": t.get("category", ""), "mention_count": t.get("mention_count", 0)}
+                     for t in prev_topics],
+                    indent=2,
+                )
+
+            topic_ctx = {
+                "competitors": competitors,
+                "cadence": cadence,
+                "linkedin_report": reports.get("linkedin", ""),
+                "industry_report": reports.get("industry", ""),
+                "website_report": reports.get("website", ""),
+                "diff_report": reports.get("diff", ""),
+                "content_strategy_report": reports.get("content_strategy", ""),
+                "previous_topics": prev_topics_str,
+            }
+            try:
+                topic_report = await self.topic_intelligence_agent.research(agency, topic_ctx)
+                reports["topics"] = topic_report
+                path = storage.save_report(agency_name, "topics", cadence, topic_report)
+                _save_formatted(agency_name, "topics", cadence, topic_report, path)
+                console.print(f"[green]  Topics: {len(topic_report)} chars -> {path.name}[/green]")
+
+                # Parse and persist structured topics
+                parsed = self.topic_intelligence_agent.parse_topics_json(topic_report)
+                if parsed:
+                    storage.save_topics(agency_name, parsed)
+                    console.print(f"[green]  Topics: {len(parsed)} topics saved to Supabase[/green]")
+            except Exception as e:
+                console.print(f"[red]  Topic Intelligence failed: {e}[/red]")
+                reports["topics"] = f"[Error: {e}]"
 
         return reports
 

@@ -65,7 +65,7 @@ TOOLS = [
                 },
                 "module": {
                     "type": "string",
-                    "enum": ["linkedin", "industry", "website", "diff", "registry", "content_strategy", "synthesis"],
+                    "enum": ["linkedin", "industry", "website", "diff", "registry", "content_strategy", "synthesis", "topics"],
                     "description": "Report module to filter by. Omit for all modules.",
                 },
                 "cadence": {
@@ -136,7 +136,7 @@ TOOLS = [
                 },
                 "module": {
                     "type": "string",
-                    "enum": ["linkedin", "industry", "website", "diff", "registry", "content_strategy"],
+                    "enum": ["linkedin", "industry", "website", "diff", "registry", "content_strategy", "topics"],
                     "description": "Module to compare across agencies.",
                 },
             },
@@ -173,6 +173,26 @@ TOOLS = [
             "required": [],
         },
     },
+    {
+        "name": "get_trending_topics",
+        "description": (
+            "Get trending topics for an agency with momentum scoring (rising/falling/stable/new). "
+            "Shows what topics are gaining traction in each agency's vertical."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "agency": {"type": "string", "description": "Agency name. Omit for all agencies."},
+                "momentum": {
+                    "type": "string",
+                    "enum": ["rising", "falling", "stable", "new"],
+                    "description": "Filter by momentum. Omit for all.",
+                },
+                "limit": {"type": "integer", "description": "Max topics per agency (default 10)."},
+            },
+            "required": [],
+        },
+    },
 ]
 
 
@@ -193,6 +213,8 @@ def _execute_tool(name: str, input_data: dict) -> str:
             return _tool_compare_agencies(input_data)
         elif name == "get_alerts":
             return _tool_get_alerts(input_data)
+        elif name == "get_trending_topics":
+            return _tool_get_trending_topics(input_data)
         else:
             return f"Unknown tool: {name}"
     except Exception as e:
@@ -318,6 +340,41 @@ def _tool_get_alerts(params: dict) -> str:
             f"  {r['detail']}"
         )
     return f"{len(parts)} alert(s):\n\n" + "\n\n".join(parts)
+
+
+def _tool_get_trending_topics(params: dict) -> str:
+    limit = min(params.get("limit", 10), 30)
+    agency = params.get("agency")
+    momentum = params.get("momentum")
+
+    query = sb.table("topics").select("*").order("last_seen_at", desc=True)
+    if agency:
+        query = query.eq("agency_name", agency)
+    if momentum:
+        query = query.eq("momentum", momentum)
+    query = query.limit(limit)
+
+    rows = query.execute()
+    if not rows.data:
+        return "No topics tracked yet. Topics are extracted during weekly surveillance runs."
+
+    momentum_icon = {"rising": "UP", "falling": "DOWN", "stable": "STEADY", "new": "NEW"}
+    parts = []
+    current_agency = None
+    for r in rows.data:
+        if r["agency_name"] != current_agency:
+            current_agency = r["agency_name"]
+            parts.append(f"\n## {current_agency}")
+        icon = momentum_icon.get(r.get("momentum", ""), "?")
+        sources = ", ".join(r.get("sources", [])[:3]) if r.get("sources") else "N/A"
+        parts.append(
+            f"[{icon}] **{r['topic']}** ({r.get('category', '?')})\n"
+            f"  Momentum: {r.get('momentum', '?')} | Mentions: {r.get('mention_count', 0)} | "
+            f"Confidence: {r.get('confidence', '?')}\n"
+            f"  Relevance: {r.get('relevance', '')[:200]}\n"
+            f"  Sources: {sources}"
+        )
+    return f"{len(rows.data)} topic(s):\n" + "\n\n".join(parts)
 
 
 # ---------------------------------------------------------------------------
