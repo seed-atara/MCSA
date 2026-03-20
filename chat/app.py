@@ -194,6 +194,37 @@ TOOLS = [
         },
     },
     {
+        "name": "get_content_calendar",
+        "description": (
+            "Get the weekly content calendar for an agency — specific posts planned "
+            "for each day with drafts, formats, platforms, and rationale."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "agency": {"type": "string", "description": "Agency name (required)."},
+            },
+            "required": ["agency"],
+        },
+    },
+    {
+        "name": "generate_post_draft",
+        "description": (
+            "Generate a ready-to-publish post draft for an agency based on a topic "
+            "and competitive trigger. Returns intelligence context for Claude to write the draft."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "agency": {"type": "string", "description": "Agency name (required)."},
+                "topic": {"type": "string", "description": "Topic for the post."},
+                "format": {"type": "string", "enum": ["thought_leadership", "hot_take", "case_study_tease", "data_insight", "team_culture", "reactive"]},
+                "platform": {"type": "string", "enum": ["linkedin_company", "linkedin_personal", "blog", "newsletter"]},
+            },
+            "required": ["agency", "topic"],
+        },
+    },
+    {
         "name": "get_key_people",
         "description": (
             "Get tracked key people and thought leaders for an agency. "
@@ -232,6 +263,10 @@ def _execute_tool(name: str, input_data: dict) -> str:
             return _tool_get_trending_topics(input_data)
         elif name == "get_key_people":
             return _tool_get_key_people(input_data)
+        elif name == "get_content_calendar":
+            return _tool_get_content_calendar(input_data)
+        elif name == "generate_post_draft":
+            return _tool_generate_post_draft(input_data)
         else:
             return f"Unknown tool: {name}"
     except Exception as e:
@@ -392,6 +427,56 @@ def _tool_get_trending_topics(params: dict) -> str:
             f"  Sources: {sources}"
         )
     return f"{len(rows.data)} topic(s):\n" + "\n\n".join(parts)
+
+
+def _tool_get_content_calendar(params: dict) -> str:
+    agency = params.get("agency", "")
+    if not agency:
+        return "Please specify an agency name."
+    query = sb.table("content_calendar").select("*").eq(
+        "agency_name", agency
+    ).order("week_start", desc=True).limit(1)
+    rows = query.execute()
+    if not rows.data:
+        return f"No content calendar found for {agency}."
+    cal = rows.data[0]
+    items = cal.get("items", [])
+    parts = [f"## {agency} Content Calendar — Week of {cal.get('week_start', '?')}\n"]
+    for item in items:
+        parts.append(
+            f"**{item.get('day', '?')} {item.get('date', '')}**\n"
+            f"  Topic: {item.get('topic', '?')}\n"
+            f"  Format: {item.get('format', '?')} | Platform: {item.get('platform', '?')} | Who: {item.get('who', '?')}\n"
+            f"  Rationale: {item.get('rationale', '?')}\n"
+            f"  Draft:\n{item.get('draft', 'No draft')}"
+        )
+    return "\n\n---\n\n".join(parts)
+
+
+def _tool_generate_post_draft(params: dict) -> str:
+    agency = params.get("agency", "")
+    topic = params.get("topic", "")
+    if not agency or not topic:
+        return "Please specify both agency and topic."
+    parts = [f"# Post Brief: {topic} for {agency}\n"]
+    topics = sb.table("topics").select("*").eq("agency_name", agency).ilike(
+        "topic", f"%{topic}%").limit(3).execute()
+    if topics.data:
+        parts.append("## Topic Intelligence")
+        for t in topics.data:
+            parts.append(f"- {t['topic']} [{t.get('momentum','?')}]: {t.get('relevance','')}")
+    reports_q = sb.table("reports").select("module, content, created_at").eq(
+        "agency_name", agency).order("created_at", desc=True).limit(5).execute()
+    relevant = []
+    for r in (reports_q.data or []):
+        if topic.lower() in r.get("content", "").lower():
+            idx = r["content"].lower().index(topic.lower())
+            snippet = r["content"][max(0, idx-300):idx+700]
+            relevant.append(f"### {r['module']} ({r['created_at'][:10]})\n...{snippet}...")
+    if relevant:
+        parts.append("\n## Relevant Intelligence")
+        parts.extend(relevant[:3])
+    return "\n".join(parts)
 
 
 def _tool_get_key_people(params: dict) -> str:

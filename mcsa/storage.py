@@ -528,3 +528,37 @@ def load_all_key_people() -> dict[str, list[dict]]:
     except Exception as e:
         console.print(f"[yellow]All key people load failed: {e}[/yellow]")
         return {}
+
+
+# ---------------------------------------------------------------------------
+# Content Calendar
+# ---------------------------------------------------------------------------
+
+def save_content_calendar(agency_name: str, week_start: str, items: list[dict], report: str = "") -> None:
+    """Save a weekly content calendar for an agency."""
+    now = datetime.now().isoformat()
+    _sb_upsert("content_calendar", {
+        "agency_name": agency_name,
+        "week_start": week_start,
+        "items": items,
+        "report": report,
+        "status": "draft",
+        "generated_at": now,
+    }, on_conflict="agency_name,week_start")
+
+
+def load_content_calendar(agency_name: str, week_start: str | None = None) -> dict | None:
+    """Load a content calendar. If no week_start, returns the most recent."""
+    sb = _get_supabase()
+    if not sb:
+        return None
+    try:
+        query = sb.table("content_calendar").select("*").eq("agency_name", agency_name)
+        if week_start:
+            query = query.eq("week_start", week_start)
+        query = query.order("week_start", desc=True).limit(1)
+        result = query.execute()
+        return result.data[0] if result.data else None
+    except Exception as e:
+        console.print(f"[yellow]Content calendar load failed: {e}[/yellow]")
+        return None

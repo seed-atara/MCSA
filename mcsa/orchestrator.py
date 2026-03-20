@@ -19,7 +19,7 @@ from core.tools import clear_sources, get_all_sources
 from core.cost_tracker import cost_tracker
 
 from .config import AGENCIES, REPORTS, CADENCE_DAILY, CADENCE_WEEKLY, CADENCE_MONTHLY
-from .agents import RegistryAgent, LinkedInAgent, IndustryAgent, DIFFAgent, WebsiteAgent, ContentStrategyAgent, TopicIntelligenceAgent, KeyPeopleAgent
+from .agents import RegistryAgent, LinkedInAgent, IndustryAgent, DIFFAgent, WebsiteAgent, ContentStrategyAgent, TopicIntelligenceAgent, KeyPeopleAgent, ContentCalendarAgent
 from . import storage
 from . import formatter
 from .slack import deliver_to_slack
@@ -64,6 +64,7 @@ class MCSAOrchestrator:
         self.content_strategy_agent = ContentStrategyAgent()
         self.topic_intelligence_agent = TopicIntelligenceAgent()
         self.key_people_agent = KeyPeopleAgent()
+        self.content_calendar_agent = ContentCalendarAgent()
 
     def _report_progress(self, phase: int, total: int, description: str) -> None:
         if self.progress_callback:
@@ -372,6 +373,64 @@ class MCSAOrchestrator:
             except Exception as e:
                 console.print(f"[red]  Topic Intelligence failed: {e}[/red]")
                 reports["topics"] = f"[Error: {e}]"
+
+        # ── Phase 6: Content Calendar (depends on all above) ──────────────
+        if cadence in (CADENCE_WEEKLY, CADENCE_MONTHLY):
+            console.print(f"[dim]  Module 9: Content Calendar[/dim]")
+
+            # Build topics summary for calendar context
+            topics_for_calendar = storage.load_topics(agency_name, limit=15)
+            topics_str = ""
+            if topics_for_calendar:
+                topics_str = json.dumps(
+                    [{"topic": t["topic"], "momentum": t["momentum"],
+                      "category": t.get("category", ""), "relevance": t.get("relevance", "")}
+                     for t in topics_for_calendar],
+                    indent=2,
+                )
+
+            # Build people summary
+            people_for_calendar = storage.load_key_people(agency_name, limit=5)
+            people_str = ""
+            if people_for_calendar:
+                people_str = json.dumps(
+                    [{"name": p["name"], "title": p.get("title", ""), "company": p.get("company", ""),
+                      "topics": p.get("topics", []), "recent_activity": p.get("recent_activity", "")}
+                     for p in people_for_calendar],
+                    indent=2,
+                )
+
+            cal_ctx = {
+                "competitors": competitors,
+                "cadence": cadence,
+                "content_strategy_report": reports.get("content_strategy", ""),
+                "diff_report": reports.get("diff", ""),
+                "topics_data": topics_str,
+                "people_data": people_str,
+            }
+            try:
+                cal_report = await self.content_calendar_agent.research(agency, cal_ctx)
+                reports["content_calendar"] = cal_report
+                path = storage.save_report(agency_name, "content_calendar", cadence, cal_report)
+                _save_formatted(agency_name, "content_calendar", cadence, cal_report, path)
+                console.print(f"[green]  Content Calendar: {len(cal_report)} chars -> {path.name}[/green]")
+
+                # Parse and persist structured calendar
+                from datetime import date as _date, timedelta
+                today = _date.today()
+                days_until_monday = (7 - today.weekday()) % 7
+                if days_until_monday == 0:
+                    days_until_monday = 7
+                next_monday = today + timedelta(days=days_until_monday)
+                week_start = next_monday.isoformat()
+
+                parsed_cal = self.content_calendar_agent.parse_calendar_json(cal_report)
+                if parsed_cal:
+                    storage.save_content_calendar(agency_name, week_start, parsed_cal, cal_report)
+                    console.print(f"[green]  Calendar: {len(parsed_cal)} items saved for week of {week_start}[/green]")
+            except Exception as e:
+                console.print(f"[red]  Content Calendar failed: {e}[/red]")
+                reports["content_calendar"] = f"[Error: {e}]"
 
         return reports
 

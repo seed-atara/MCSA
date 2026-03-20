@@ -335,6 +335,39 @@ TOOLS = [
         },
     },
     {
+        "name": "get_content_calendar",
+        "description": (
+            "Get the weekly content calendar for an agency — specific posts planned "
+            "for each day with drafts, formats, platforms, and rationale."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "agency": {"type": "string", "description": "Agency name (required)."},
+            },
+            "required": ["agency"],
+        },
+    },
+    {
+        "name": "generate_post_draft",
+        "description": (
+            "Generate a ready-to-publish post draft for an agency based on a topic "
+            "and competitive trigger. Returns intelligence context for Claude to write the draft."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "agency": {"type": "string", "description": "Agency name (required)."},
+                "topic": {"type": "string", "description": "Topic for the post."},
+                "format": {"type": "string", "enum": ["thought_leadership", "hot_take", "case_study_tease", "data_insight", "team_culture", "reactive"],
+                           "description": "Post format/style."},
+                "platform": {"type": "string", "enum": ["linkedin_company", "linkedin_personal", "blog", "newsletter"],
+                             "description": "Target platform. Default: linkedin_company."},
+            },
+            "required": ["agency", "topic"],
+        },
+    },
+    {
         "name": "get_key_people",
         "description": (
             "Get tracked key people and thought leaders for an agency. "
@@ -397,6 +430,10 @@ def _execute_tool(name: str, input_data: dict) -> str:
             return _tool_get_key_people(sb, input_data)
         elif name == "suggest_content":
             return _tool_suggest_content(sb, input_data)
+        elif name == "get_content_calendar":
+            return _tool_get_content_calendar(sb, input_data)
+        elif name == "generate_post_draft":
+            return _tool_generate_post_draft(sb, input_data)
         else:
             return f"Unknown tool: {name}"
     except Exception as e:
@@ -577,6 +614,81 @@ def _tool_get_key_people(sb, params: dict) -> str:
             f"  Recent: {r.get('recent_activity', 'No recent activity')[:200]}"
         )
     return f"{len(rows.data)} key people:\n" + "\n\n".join(parts)
+
+
+def _tool_get_content_calendar(sb, params: dict) -> str:
+    agency = params.get("agency", "")
+    if not agency:
+        return "Please specify an agency name."
+
+    query = sb.table("content_calendar").select("*").eq(
+        "agency_name", agency
+    ).order("week_start", desc=True).limit(1)
+    rows = query.execute()
+
+    if not rows.data:
+        return f"No content calendar found for {agency}. Calendars are generated during weekly surveillance runs."
+
+    cal = rows.data[0]
+    items = cal.get("items", [])
+    week = cal.get("week_start", "?")
+    status = cal.get("status", "draft")
+
+    parts = [f"## {agency} Content Calendar — Week of {week} ({status})\n"]
+    for item in items:
+        parts.append(
+            f"**{item.get('day', '?')} {item.get('date', '')}**\n"
+            f"  Topic: {item.get('topic', '?')}\n"
+            f"  Format: {item.get('format', '?')} | Platform: {item.get('platform', '?')} | Who: {item.get('who', '?')}\n"
+            f"  Rationale: {item.get('rationale', '?')[:200]}\n"
+            f"  Draft: {item.get('draft', 'No draft')[:300]}..."
+        )
+    return "\n\n".join(parts)
+
+
+def _tool_generate_post_draft(sb, params: dict) -> str:
+    agency = params.get("agency", "")
+    topic = params.get("topic", "")
+    if not agency or not topic:
+        return "Please specify both agency and topic."
+
+    parts = [f"# Post Brief: {topic} for {agency}\n"]
+
+    # Get relevant topics data
+    topics = sb.table("topics").select("*").eq("agency_name", agency).ilike(
+        "topic", f"%{topic}%"
+    ).limit(3).execute()
+    if topics.data:
+        parts.append("## Topic Intelligence")
+        for t in topics.data:
+            parts.append(f"- {t['topic']} [{t.get('momentum','?')}]: {t.get('relevance','')[:200]}")
+            parts.append(f"  Sources: {', '.join(t.get('sources', [])[:3])}")
+
+    # Get relevant reports mentioning this topic
+    reports = sb.table("reports").select("agency_name, module, content, created_at").eq(
+        "agency_name", agency
+    ).order("created_at", desc=True).limit(5).execute()
+    relevant = []
+    for r in (reports.data or []):
+        if topic.lower() in r.get("content", "").lower():
+            idx = r["content"].lower().index(topic.lower())
+            snippet = r["content"][max(0, idx-200):idx+500]
+            relevant.append(f"### {r['module']} ({r['created_at'][:10]})\n...{snippet}...")
+    if relevant:
+        parts.append("\n## Relevant Intelligence")
+        parts.extend(relevant[:3])
+
+    # Get key people who cover this topic
+    people = sb.table("key_people").select("name, company, topics, recent_activity").eq(
+        "agency_name", agency
+    ).eq("status", "active").limit(5).execute()
+    relevant_people = [p for p in (people.data or []) if any(topic.lower() in t.lower() for t in p.get("topics", []))]
+    if relevant_people:
+        parts.append("\n## Relevant Key People")
+        for p in relevant_people:
+            parts.append(f"- {p['name']} ({p.get('company','?')}): {p.get('recent_activity','')[:150]}")
+
+    return "\n".join(parts)
 
 
 def _tool_suggest_content(sb, params: dict) -> str:

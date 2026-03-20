@@ -1053,3 +1053,102 @@ class KeyPeopleAgent(ResearchAgent):
         except (ValueError, json.JSONDecodeError) as e:
             console.print(f"[yellow]  People JSON parse failed: {e}[/yellow]")
             return []
+
+
+# ---------------------------------------------------------------------------
+# Module 9 — Content Calendar Generation
+# ---------------------------------------------------------------------------
+
+class ContentCalendarAgent(ResearchAgent):
+    """Generates weekly content calendars with specific post drafts."""
+
+    def __init__(self):
+        super().__init__(
+            "Content Calendar Agent",
+            "Produces weekly content calendars with post drafts tied to competitive intelligence",
+        )
+
+    async def research(self, agency: dict, context: dict) -> str:
+        agency_name = agency["name"]
+        agency_focus = agency.get("focus", "")
+        agency_website = agency.get("website", "")
+        cadence = context.get("cadence", "weekly")
+
+        # Gather all upstream intelligence
+        content_strategy = context.get("content_strategy_report", "")
+        diff_report = context.get("diff_report", "")
+        topics_data = context.get("topics_data", "")
+        people_data = context.get("people_data", "")
+
+        upstream_limit = 6000
+        upstream = ""
+        if content_strategy:
+            upstream += f"\n\n## CONTENT STRATEGY REPORT\n{content_strategy[:upstream_limit]}"
+        if diff_report:
+            upstream += f"\n\n## COMPETITIVE DIFF\n{diff_report[:upstream_limit]}"
+        if topics_data:
+            upstream += f"\n\n## TRENDING TOPICS\n{topics_data[:3000]}"
+        if people_data:
+            upstream += f"\n\n## KEY PEOPLE & THEIR ACTIVITY\n{people_data[:3000]}"
+
+        today = date.today()
+        # Find next Monday
+        days_until_monday = (7 - today.weekday()) % 7
+        if days_until_monday == 0:
+            days_until_monday = 7
+        next_monday = today + __import__('datetime').timedelta(days=days_until_monday)
+        week_dates = [(next_monday + __import__('datetime').timedelta(days=i)).strftime("%A %d %B") for i in range(5)]
+
+        system = (
+            f"You are a content strategist and copywriter for {agency_name} (Tomorrow Group), "
+            f"specialising in {agency_focus}.\n\n"
+            f"TASK: Create a specific 5-day content calendar for next week "
+            f"({week_dates[0]} to {week_dates[4]}).\n\n"
+            f"For EACH day (Monday to Friday), provide:\n"
+            f"1. **Topic** — tied to a specific competitive signal or trending topic\n"
+            f"2. **Format** — carousel, video script, text post, article, infographic, etc.\n"
+            f"3. **Platform** — LinkedIn (company page or personal), blog, newsletter, etc.\n"
+            f"4. **Who** — who should post (MD, specific team role, company page)\n"
+            f"5. **Draft** — an actual ready-to-post draft (for LinkedIn posts: 150-300 words, "
+            f"include a hook, body, and CTA. For other formats: a detailed brief.)\n"
+            f"6. **Rationale** — which competitive signal triggered this post\n\n"
+            f"IMPORTANT RULES:\n"
+            f"- Every post MUST be tied to specific competitive intelligence from the data\n"
+            f"- Drafts must be ready to publish with minimal editing\n"
+            f"- Include relevant hashtags for LinkedIn posts\n"
+            f"- Vary formats across the week (don't do all text posts)\n"
+            f"- Include at least one reactive post (responding to competitor move)\n"
+            f"- Include at least one thought leadership piece\n"
+            f"- Reference key people/competitors by name where relevant\n\n"
+            f"OUTPUT FORMAT:\n"
+            f"First, a ```json``` block with the calendar:\n"
+            f"```json\n"
+            f"[\n"
+            f'  {{"day": "Monday", "date": "{week_dates[0]}", "topic": "...", '
+            f'"format": "LinkedIn text post", "platform": "LinkedIn (company page)", '
+            f'"who": "MD", "draft": "The full post text here...", '
+            f'"rationale": "Competitor X just launched Y, we need to respond with..."}}\n'
+            f"]\n"
+            f"```\n\n"
+            f"Then a markdown summary:\n"
+            f"## Weekly Theme\n"
+            f"One sentence describing the week's content narrative.\n\n"
+            f"## Content Mix\n"
+            f"Breakdown of formats, platforms, and posting rhythm.\n\n"
+            f"## Key Metrics to Track\n"
+            f"What success looks like for each post."
+            + _governance()
+        )
+
+        user = f"COMPETITIVE INTELLIGENCE DATA:{upstream}"
+        return await self._call_claude(system, user, max_tokens=_max_tokens(cadence), context=context)
+
+    def parse_calendar_json(self, report: str) -> list[dict]:
+        """Extract the JSON calendar array from a content calendar report."""
+        try:
+            start = report.index("```json") + 7
+            end = report.index("```", start)
+            return json.loads(report[start:end].strip())
+        except (ValueError, json.JSONDecodeError) as e:
+            console.print(f"[yellow]  Calendar JSON parse failed: {e}[/yellow]")
+            return []
