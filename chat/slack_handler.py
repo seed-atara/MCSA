@@ -315,6 +315,21 @@ TOOLS = [
             "required": [],
         },
     },
+    {
+        "name": "get_key_people",
+        "description": (
+            "Get tracked key people and thought leaders for an agency. "
+            "Shows their role, company, topics, recent activity, and relevance."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "agency": {"type": "string", "description": "Agency name. Omit for all agencies."},
+                "limit": {"type": "integer", "description": "Max people (default 10)."},
+            },
+            "required": [],
+        },
+    },
 ]
 
 SYSTEM_PROMPT = """You are the MCSA Intelligence Analyst for Tomorrow Group — a holding company
@@ -359,6 +374,8 @@ def _execute_tool(name: str, input_data: dict) -> str:
             return _tool_get_alerts(sb, input_data)
         elif name == "get_trending_topics":
             return _tool_get_trending_topics(sb, input_data)
+        elif name == "get_key_people":
+            return _tool_get_key_people(sb, input_data)
         else:
             return f"Unknown tool: {name}"
     except Exception as e:
@@ -510,6 +527,35 @@ def _tool_get_trending_topics(sb, params: dict) -> str:
             f"  {r.get('relevance', '')[:150]}"
         )
     return f"{len(rows.data)} topic(s):\n" + "\n".join(parts)
+
+
+def _tool_get_key_people(sb, params: dict) -> str:
+    limit = min(params.get("limit", 10), 20)
+    agency = params.get("agency")
+
+    query = sb.table("key_people").select("*").eq("status", "active").order("updated_at", desc=True)
+    if agency:
+        query = query.eq("agency_name", agency)
+    query = query.limit(limit)
+
+    rows = query.execute()
+    if not rows.data:
+        return "No key people tracked yet. People are discovered during surveillance runs."
+
+    parts = []
+    current_agency = None
+    for r in rows.data:
+        if r["agency_name"] != current_agency:
+            current_agency = r["agency_name"]
+            parts.append(f"\n## {current_agency}")
+        topics = ", ".join(r.get("topics", [])[:4]) if r.get("topics") else "N/A"
+        parts.append(
+            f"**{r['name']}** — {r.get('title', '?')} at {r.get('company', '?')}\n"
+            f"  Topics: {topics}\n"
+            f"  Relevance: {r.get('relevance', '')[:200]}\n"
+            f"  Recent: {r.get('recent_activity', 'No recent activity')[:200]}"
+        )
+    return f"{len(rows.data)} key people:\n" + "\n\n".join(parts)
 
 
 # ---------------------------------------------------------------------------

@@ -913,3 +913,143 @@ class TopicIntelligenceAgent(ResearchAgent):
         except (ValueError, json.JSONDecodeError) as e:
             console.print(f"[yellow]  Topic JSON parse failed: {e}[/yellow]")
             return []
+
+
+# ---------------------------------------------------------------------------
+# Module 8 — Key People Tracking
+# ---------------------------------------------------------------------------
+
+class KeyPeopleAgent(ResearchAgent):
+    """Discovers and monitors key thought leaders per agency vertical."""
+
+    def __init__(self):
+        super().__init__(
+            "Key People Agent",
+            "Tracks key thought leaders and influencers in each agency's vertical",
+        )
+
+    async def research(self, agency: dict, context: dict) -> str:
+        agency_name = agency["name"]
+        agency_focus = agency.get("focus", "")
+        cadence = context.get("cadence", "weekly")
+        competitors = context.get("competitors", [])
+
+        # Get existing tracked people for updates
+        existing_people = context.get("existing_people", "")
+        existing_context = ""
+        if existing_people:
+            existing_context = (
+                f"\n\nCURRENTLY TRACKED PEOPLE (update their activity, flag departures):\n"
+                f"{existing_people}"
+            )
+
+        comp_list = ", ".join(c.get("name", "?") for c in competitors[:10])
+
+        if cadence == "monthly" or not existing_people:
+            # Discovery mode: find key people
+            queries = [
+                f'{agency_focus} thought leader speaker conference UK 2026',
+                f'{agency_focus} LinkedIn influencer UK agency',
+                f'{agency_focus} "quoted" OR "commented" OR "said" industry expert UK',
+                f'{agency_focus} award judge panel speaker UK 2026',
+                f'({comp_list}) founder CEO "managing director" LinkedIn',
+            ]
+        else:
+            # Weekly monitoring: check activity of known people
+            people_names = context.get("people_names", [])
+            if people_names:
+                name_query = " OR ".join(f'"{n}"' for n in people_names[:5])
+                queries = [
+                    f'({name_query}) LinkedIn post {agency_focus} 2026',
+                    f'({name_query}) speaking conference event 2026',
+                    f'({name_query}) quoted press {agency_focus}',
+                    f'({name_query}) "new role" OR "joined" OR "appointed"',
+                ]
+            else:
+                queries = [
+                    f'{agency_focus} thought leader LinkedIn post UK 2026',
+                    f'{agency_focus} speaker conference UK 2026',
+                ]
+
+        search_fn = _gather_for_cadence(cadence)
+        combined = await search_fn(queries)
+
+        # Also include upstream reports for context
+        linkedin_report = context.get("linkedin_report", "")
+        industry_report = context.get("industry_report", "")
+        upstream = ""
+        if linkedin_report:
+            upstream += f"\n\n## LINKEDIN INTELLIGENCE (for people mentions)\n{linkedin_report[:6000]}"
+        if industry_report:
+            upstream += f"\n\n## INDUSTRY INTELLIGENCE (for people mentions)\n{industry_report[:6000]}"
+
+        if cadence == "monthly" or not existing_people:
+            system = (
+                f"You are a people intelligence analyst for {agency_name} (Tomorrow Group), "
+                f"specialising in {agency_focus}.\n\n"
+                f"TASK: Identify 3-5 KEY PEOPLE who are the most influential voices in "
+                f"{agency_focus} in the UK market. These should be people whose activity "
+                f"{agency_name} needs to track.\n\n"
+                f"Include:\n"
+                f"- Competitor agency leaders (founders, MDs, heads of strategy)\n"
+                f"- Industry thought leaders and frequent speakers\n"
+                f"- Journalists/editors who shape the conversation\n"
+                f"- Rising voices gaining influence\n\n"
+                f"For each person, provide:\n"
+                f"- Name, title, company\n"
+                f"- LinkedIn URL (if findable)\n"
+                f"- Topics they cover\n"
+                f"- Why they matter for {agency_name}\n"
+                f"- Recent notable activity\n\n"
+                f"OUTPUT FORMAT:\n"
+                f"First, a ```json``` block:\n"
+                f"```json\n"
+                f"[\n"
+                f'  {{"name": "Jane Smith", "title": "CEO", "company": "Rival Agency", '
+                f'"linkedin_url": "https://linkedin.com/in/janesmith", '
+                f'"topics": ["AI marketing", "content strategy"], '
+                f'"relevance": "Direct competitor leader, frequent speaker", '
+                f'"recent_activity": "Keynote at BrightonSEO on AI content", '
+                f'"status": "active"}}\n'
+                f"]\n"
+                f"```\n\n"
+                f"Then a markdown summary with analysis of the people landscape."
+                + _governance()
+            )
+        else:
+            system = (
+                f"You are a people intelligence analyst for {agency_name} (Tomorrow Group), "
+                f"specialising in {agency_focus}.\n\n"
+                f"TASK: WEEKLY activity update for tracked key people.\n"
+                f"Competitors: {comp_list}\n\n"
+                f"For each tracked person, report:\n"
+                f"- New LinkedIn posts or articles\n"
+                f"- Speaking engagements announced or completed\n"
+                f"- Press quotes or media appearances\n"
+                f"- Job changes or role updates\n"
+                f"- Any shift in their content focus\n\n"
+                f"Flag:\n"
+                f"- [NEW CONTENT] if they published something notable\n"
+                f"- [JOB CHANGE] if they moved roles\n"
+                f"- [SPEAKING] if they're appearing at an event\n"
+                f"- [QUIET] if no activity detected\n\n"
+                f"OUTPUT FORMAT:\n"
+                f"First, a ```json``` block with updated people data (same schema as before, "
+                f"with updated recent_activity and status fields).\n"
+                f"Then a markdown activity digest."
+                + _governance()
+            )
+
+        ctx_limit = _context_limit(cadence)
+        user = f"RESEARCH DATA:\n{combined[:ctx_limit]}{upstream}{existing_context}"
+        return await self._call_claude(system, user, max_tokens=_max_tokens(cadence), context=context)
+
+    def parse_people_json(self, report: str) -> list[dict]:
+        """Extract the JSON people array from a key people report."""
+        try:
+            start = report.index("```json") + 7
+            end = report.index("```", start)
+            return json.loads(report[start:end].strip())
+        except (ValueError, json.JSONDecodeError) as e:
+            console.print(f"[yellow]  People JSON parse failed: {e}[/yellow]")
+            return []

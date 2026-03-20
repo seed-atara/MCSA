@@ -458,3 +458,73 @@ def load_all_topics(limit_per_agency: int = 10) -> dict[str, list[dict]]:
     except Exception as e:
         console.print(f"[yellow]All topics load failed: {e}[/yellow]")
         return {}
+
+
+# ---------------------------------------------------------------------------
+# Key People
+# ---------------------------------------------------------------------------
+
+def save_key_people(agency_name: str, people: list[dict]) -> None:
+    """Upsert key people for an agency."""
+    now = datetime.now().isoformat()
+
+    for p in people:
+        name = p.get("name", "").strip()
+        if not name:
+            continue
+
+        row = {
+            "agency_name": agency_name,
+            "name": name,
+            "title": p.get("title", ""),
+            "company": p.get("company", ""),
+            "linkedin_url": p.get("linkedin_url", ""),
+            "topics": p.get("topics", []),
+            "relevance": p.get("relevance", ""),
+            "recent_activity": p.get("recent_activity", ""),
+            "status": p.get("status", "active"),
+            "updated_at": now,
+        }
+
+        _sb_upsert("key_people", row, on_conflict="agency_name,name")
+
+
+def load_key_people(agency_name: str, limit: int = 10) -> list[dict]:
+    """Load key people for an agency."""
+    sb = _get_supabase()
+    if not sb:
+        return []
+    try:
+        query = (
+            sb.table("key_people")
+            .select("*")
+            .eq("agency_name", agency_name)
+            .eq("status", "active")
+            .order("updated_at", desc=True)
+            .limit(limit)
+        )
+        result = query.execute()
+        return result.data or []
+    except Exception as e:
+        console.print(f"[yellow]Key people load failed: {e}[/yellow]")
+        return []
+
+
+def load_all_key_people() -> dict[str, list[dict]]:
+    """Load key people grouped by agency."""
+    sb = _get_supabase()
+    if not sb:
+        return {}
+    try:
+        query = sb.table("key_people").select("*").eq("status", "active").order("updated_at", desc=True).limit(100)
+        result = query.execute()
+        grouped: dict[str, list[dict]] = {}
+        for row in (result.data or []):
+            agency = row.get("agency_name", "?")
+            if agency not in grouped:
+                grouped[agency] = []
+            grouped[agency].append(row)
+        return grouped
+    except Exception as e:
+        console.print(f"[yellow]All key people load failed: {e}[/yellow]")
+        return {}

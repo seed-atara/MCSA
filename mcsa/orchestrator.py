@@ -19,7 +19,7 @@ from core.tools import clear_sources, get_all_sources
 from core.cost_tracker import cost_tracker
 
 from .config import AGENCIES, REPORTS, CADENCE_DAILY, CADENCE_WEEKLY, CADENCE_MONTHLY
-from .agents import RegistryAgent, LinkedInAgent, IndustryAgent, DIFFAgent, WebsiteAgent, ContentStrategyAgent, TopicIntelligenceAgent
+from .agents import RegistryAgent, LinkedInAgent, IndustryAgent, DIFFAgent, WebsiteAgent, ContentStrategyAgent, TopicIntelligenceAgent, KeyPeopleAgent
 from . import storage
 from . import formatter
 from .slack import deliver_to_slack
@@ -63,6 +63,7 @@ class MCSAOrchestrator:
         self.website_agent = WebsiteAgent()
         self.content_strategy_agent = ContentStrategyAgent()
         self.topic_intelligence_agent = TopicIntelligenceAgent()
+        self.key_people_agent = KeyPeopleAgent()
 
     def _report_progress(self, phase: int, total: int, description: str) -> None:
         if self.progress_callback:
@@ -239,6 +240,28 @@ class MCSAOrchestrator:
             phase2_tasks.append(self.website_agent.research(agency, web_ctx))
             phase2_labels.append("website")
 
+            # Key People (parallel with other Phase 2 modules)
+            existing_people = storage.load_key_people(agency_name, limit=10)
+            people_names = [p.get("name", "") for p in existing_people if p.get("name")]
+            existing_str = ""
+            if existing_people:
+                existing_str = json.dumps(
+                    [{"name": p["name"], "title": p.get("title", ""), "company": p.get("company", ""),
+                      "topics": p.get("topics", []), "status": p.get("status", "active")}
+                     for p in existing_people],
+                    indent=2,
+                )
+            kp_ctx = {
+                "competitors": competitors,
+                "cadence": cadence,
+                "existing_people": existing_str,
+                "people_names": people_names,
+                "linkedin_report": "",  # not available yet, will use search data
+                "industry_report": "",
+            }
+            phase2_tasks.append(self.key_people_agent.research(agency, kp_ctx))
+            phase2_labels.append("key_people")
+
         if phase2_tasks:
             label_str = ", ".join(phase2_labels)
             console.print(f"[dim]  Modules 2/3/5: {label_str} (parallel)[/dim]")
@@ -259,6 +282,13 @@ class MCSAOrchestrator:
             # (only weekly/monthly — daily uses lightweight mapping, no crawl data)
             if cadence != CADENCE_DAILY and "website" in reports and not reports["website"].startswith("[Error"):
                 _save_website_snapshots(agency_name, web_ctx, competitors)
+
+            # Post-process: parse and save key people
+            if "key_people" in reports and not reports["key_people"].startswith("[Error"):
+                parsed_people = self.key_people_agent.parse_people_json(reports["key_people"])
+                if parsed_people:
+                    storage.save_key_people(agency_name, parsed_people)
+                    console.print(f"[green]  Key People: {len(parsed_people)} people saved to Supabase[/green]")
 
         # ── Phase 3: DIFF (depends on phase 2) ───────────────────────────
         if cadence in (CADENCE_WEEKLY, CADENCE_MONTHLY):
