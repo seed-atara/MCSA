@@ -426,6 +426,11 @@ class MCSAOrchestrator:
 
                 parsed_cal = self.content_calendar_agent.parse_calendar_json(cal_report)
                 if parsed_cal:
+                    # Verification loop — check for fabricated claims and rewrite
+                    console.print(f"[dim]  Verifying {len(parsed_cal)} calendar items...[/dim]")
+                    parsed_cal = await self.content_calendar_agent.verify_and_rewrite(
+                        agency, parsed_cal, cal_ctx
+                    )
                     storage.save_content_calendar(agency_name, week_start, parsed_cal, cal_report)
                     console.print(f"[green]  Calendar: {len(parsed_cal)} items saved for week of {week_start}[/green]")
             except Exception as e:
