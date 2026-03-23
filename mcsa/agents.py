@@ -1218,13 +1218,62 @@ class ContentCalendarAgent(ResearchAgent):
             console.print(f"[yellow]  Calendar JSON parse failed: {e}[/yellow]")
             return []
 
-    async def verify_and_rewrite(self, agency: dict, calendar_items: list[dict], context: dict) -> list[dict]:
-        """Verification loop: check each post draft for fabricated claims and rewrite if needed.
+    async def verify_and_rewrite(self, agency: dict, calendar_items: list[dict], context: dict, max_iterations: int = 5) -> list[dict]:
+        """Verification loop: check each post draft for fabricated claims and rewrite until clean.
 
+        Each draft is verified → rewritten → re-verified, up to max_iterations.
         Returns cleaned calendar items with verified drafts.
         """
         agency_name = agency["name"]
         agency_website = agency.get("website", "")
+
+        verify_system = (
+            f"You are a strict fact-checker and editorial QA reviewer for {agency_name} "
+            f"(Tomorrow Group). Your job is to catch ANY fabricated or low-quality content "
+            f"before it's published. Be ruthless — if in doubt, flag it.\n\n"
+            f"Agency website: {agency_website}\n\n"
+            f"CHECK FOR:\n"
+            f"1. FABRICATED STATISTICS — any specific number (%, X times, $amount) not from "
+            f"the provided research data. [FABRICATED STAT]\n"
+            f"2. FALSE COMPETITOR CLAIMS — claims about what a named company IS doing that "
+            f"aren't in the research data. [FALSE CLAIM]\n"
+            f"3. FAKE CASE STUDIES — 'we did X', 'our team in Y', 'we tested Z' not from "
+            f"the agency's own website. [FAKE CASE STUDY]\n"
+            f"4. INVENTED LOCATIONS — office/team locations not verified. [INVENTED LOCATION]\n"
+            f"5. UNVERIFIABLE CLAIMS — 'our research suggests', 'we're seeing', 'early indicators "
+            f"suggest' without ANY specific source or evidence. [UNVERIFIABLE]\n"
+            f"6. GENERIC AI SLOP — cliches ('signals point to', 'fundamental shift', "
+            f"'smart marketers are already', 'landscape', 'game-changer'), throat-clearing "
+            f"openers, vague corporate speak, generic CTAs. [SLOP]\n\n"
+            f"Be STRICT on slop. A post that reads like it could have been written by any AI "
+            f"about any agency is NOT publishable. It must have a distinctive voice and "
+            f"specific, grounded perspective.\n\n"
+            f"OUTPUT: A JSON object:\n"
+            f"```json\n"
+            f'{{"pass": true/false, "issues": ["issue 1", "issue 2"], '
+            f'"severity": "CLEAN/LOW/MEDIUM/HIGH/CRITICAL"}}\n'
+            f"```\n"
+            f"pass=true ONLY if the draft has zero issues. Be strict."
+        )
+
+        rewrite_system = (
+            f"You are a senior copywriter rewriting a LinkedIn post for {agency_name} "
+            f"(Tomorrow Group) to fix quality issues.\n\n"
+            f"REWRITE RULES:\n"
+            f"- Remove ALL fabricated statistics — use qualitative framing instead\n"
+            f"- Remove ALL false competitor claims and fake case studies\n"
+            f"- Remove ALL 'our research suggests' / 'we're seeing' / 'industry signals' "
+            f"vagueness — instead state the agency's OPINION directly: 'We believe', "
+            f"'Our position is', 'Here's what matters'\n"
+            f"- Remove ALL generic slop: no 'landscape', 'fundamental shift', 'game-changer', "
+            f"'smart marketers', no generic CTAs like 'Let's discuss'\n"
+            f"- Write with a DISTINCTIVE voice — this should sound like a specific human "
+            f"at {agency_name}, not a generic AI. Be opinionated, direct, slightly provocative.\n"
+            f"- Open with a hook that earns the 'see more' click — no throat-clearing\n"
+            f"- 150-250 words, max 3 hashtags, no external links\n"
+            f"- End with a specific question or bold statement, not a generic CTA\n\n"
+            f"Return ONLY the rewritten post text, nothing else."
+        )
 
         verified_items = []
         for item in calendar_items:
@@ -1233,95 +1282,75 @@ class ContentCalendarAgent(ResearchAgent):
                 verified_items.append(item)
                 continue
 
-            # Step 1: Verify the draft
-            verify_system = (
-                f"You are a fact-checker and editorial QA reviewer for {agency_name} "
-                f"(Tomorrow Group). Your job is to catch fabricated content before it's published.\n\n"
-                f"Agency website: {agency_website}\n\n"
-                f"Review the following LinkedIn post draft and flag EVERY issue:\n\n"
-                f"CHECK FOR:\n"
-                f"1. FABRICATED STATISTICS — any specific number (%, X times, $amount) that isn't "
-                f"from the provided research data. Flag with [FABRICATED STAT]\n"
-                f"2. FALSE COMPETITOR CLAIMS — any claim about what a named company IS doing "
-                f"that isn't in the research data. Flag with [FALSE CLAIM]\n"
-                f"3. FAKE CASE STUDIES — any 'we did X', 'our team in Y', 'we tested Z' that "
-                f"isn't from the agency's own website. Flag with [FAKE CASE STUDY]\n"
-                f"4. INVENTED LOCATIONS — any mention of office locations, team locations, "
-                f"that aren't verified. Flag with [INVENTED LOCATION]\n"
-                f"5. UNVERIFIABLE PREDICTIONS — specific timelines or predictions stated as "
-                f"fact. Flag with [UNVERIFIABLE]\n"
-                f"6. GENERIC AI SLOP — cliche phrases, throat-clearing, buzzwords. "
-                f"Flag with [SLOP]\n\n"
-                f"OUTPUT: A JSON object:\n"
-                f"```json\n"
-                f'{{"pass": true/false, "issues": ["issue 1", "issue 2"], '
-                f'"severity": "CLEAN/LOW/MEDIUM/HIGH/CRITICAL"}}\n'
-                f"```\n"
-                f"If pass=true, the draft is safe to publish.\n"
-                f"If pass=false, list every issue found."
-            )
+            day = item.get("day", "?")
+            current_draft = draft
+            passed = False
 
-            verify_user = f"DRAFT TO VERIFY:\n{draft}\n\nTOPIC: {item.get('topic', '')}\nRATIONALE: {item.get('rationale', '')}"
+            for iteration in range(max_iterations):
+                # Verify
+                verify_user = (
+                    f"DRAFT TO VERIFY:\n{current_draft}\n\n"
+                    f"TOPIC: {item.get('topic', '')}\n"
+                    f"RATIONALE: {item.get('rationale', '')}"
+                )
+                verify_result = await self._call_claude(
+                    verify_system, verify_user, max_tokens=1000, context={}
+                )
 
-            verify_result = await self._call_claude(verify_system, verify_user, max_tokens=1000, context={})
+                # Parse verification
+                try:
+                    js_start = verify_result.index("{")
+                    js_end = verify_result.rindex("}") + 1
+                    verification = json.loads(verify_result[js_start:js_end])
+                except (ValueError, json.JSONDecodeError):
+                    verification = {"pass": False, "issues": ["Parse error"], "severity": "MEDIUM"}
 
-            # Parse verification result
-            try:
-                json_start = verify_result.index("```json") + 7
-                json_end = verify_result.index("```", json_start)
-                verification = json.loads(verify_result[json_start:json_end].strip())
-            except (ValueError, json.JSONDecodeError):
-                verification = {"pass": False, "issues": ["Could not parse verification"], "severity": "MEDIUM"}
+                if verification.get("pass"):
+                    console.print(
+                        f"[green]    {day}: PASSED (iteration {iteration + 1})[/green]"
+                    )
+                    passed = True
+                    break
 
-            if verification.get("pass"):
-                console.print(f"[green]    {item.get('day', '?')}: VERIFIED — clean[/green]")
-                verified_items.append(item)
-                continue
+                issues = verification.get("issues", [])
+                severity = verification.get("severity", "MEDIUM")
+                console.print(
+                    f"[yellow]    {day}: FAILED ({severity}, iter {iteration + 1}/{max_iterations}) "
+                    f"— {len(issues)} issue(s), rewriting...[/yellow]"
+                )
 
-            issues = verification.get("issues", [])
-            severity = verification.get("severity", "MEDIUM")
-            console.print(f"[yellow]    {item.get('day', '?')}: FAILED ({severity}) — {len(issues)} issue(s), rewriting...[/yellow]")
+                # Rewrite
+                issues_text = "\n".join(
+                    f"- {i}" if isinstance(i, str) else f"- {i.get('text', i.get('type', str(i)))}"
+                    for i in issues
+                )
+                rewrite_user = (
+                    f"DRAFT WITH ISSUES:\n{current_draft}\n\n"
+                    f"ISSUES TO FIX:\n{issues_text}\n\n"
+                    f"TOPIC: {item.get('topic', '')}\n"
+                    f"RATIONALE: {item.get('rationale', '')}\n\n"
+                    f"Rewrite fixing ALL issues. Return ONLY the new post text."
+                )
+                rewritten = await self._call_claude(
+                    rewrite_system, rewrite_user, max_tokens=1500, context={}
+                )
 
-            # Step 2: Rewrite the draft fixing all issues
-            rewrite_system = (
-                f"You are rewriting a LinkedIn post draft for {agency_name} (Tomorrow Group) "
-                f"to fix verified issues. The original draft contained fabricated or unverifiable claims.\n\n"
-                f"RULES FOR THE REWRITE:\n"
-                f"- Remove ALL fabricated statistics. Use qualitative framing instead.\n"
-                f"- Remove ALL false claims about named competitors.\n"
-                f"- Remove ALL fake case studies, team locations, or internal results.\n"
-                f"- Keep the core topic, angle, and brand voice.\n"
-                f"- Frame as the agency's PERSPECTIVE on industry trends.\n"
-                f"- Use 'Our research suggests...' or 'Industry signals indicate...' instead of fake specifics.\n"
-                f"- The post should still be compelling and publishable — don't make it bland.\n"
-                f"- Maintain 150-250 words, strong hook, clear CTA.\n"
-                f"- Max 3 hashtags.\n\n"
-                f"Return ONLY the rewritten post text, nothing else."
-            )
+                # Clean markdown fencing
+                rewritten = rewritten.strip()
+                if rewritten.startswith("```"):
+                    rewritten = rewritten.split("\n", 1)[-1]
+                if rewritten.endswith("```"):
+                    rewritten = rewritten.rsplit("```", 1)[0]
+                current_draft = rewritten.strip()
 
-            issues_text = "\n".join(f"- {i}" for i in issues)
-            rewrite_user = (
-                f"ORIGINAL DRAFT:\n{draft}\n\n"
-                f"ISSUES FOUND:\n{issues_text}\n\n"
-                f"TOPIC: {item.get('topic', '')}\n"
-                f"RATIONALE: {item.get('rationale', '')}\n\n"
-                f"Rewrite the post fixing all issues. Return ONLY the new post text."
-            )
+            if not passed:
+                console.print(
+                    f"[red]    {day}: EXHAUSTED {max_iterations} iterations — using best version[/red]"
+                )
 
-            rewritten = await self._call_claude(rewrite_system, rewrite_user, max_tokens=1500, context={})
-
-            # Clean up — remove any markdown fencing
-            rewritten = rewritten.strip()
-            if rewritten.startswith("```"):
-                rewritten = rewritten.split("\n", 1)[-1]
-            if rewritten.endswith("```"):
-                rewritten = rewritten.rsplit("```", 1)[0]
-            rewritten = rewritten.strip()
-
-            item["draft"] = rewritten
-            item["verified"] = True
-            item["original_issues"] = issues
+            item["draft"] = current_draft
+            item["verified"] = passed
+            item["verification_iterations"] = iteration + 1
             verified_items.append(item)
-            console.print(f"[green]    {item.get('day', '?')}: REWRITTEN — {len(rewritten)} chars[/green]")
 
         return verified_items
