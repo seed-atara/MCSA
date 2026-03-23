@@ -76,6 +76,13 @@ AGENCIES: list[dict] = [
         "headcount": 70,
         "website": "www.found.co.uk",
         "focus": "SEO, PPC, digital performance marketing",
+        "facts": {
+            "founded": "2009",
+            "locations": ["London"],
+            "known_clients": [],  # only add verified clients
+            "awards": [],
+            "do_not_claim": "Do not invent client names, case study results, or team sizes beyond what's on found.co.uk",
+        },
         "voice": {
             "personality": "Data-obsessed performance experts who cut through SEO hype with evidence",
             "tone": "Direct, metric-driven, slightly contrarian — we prove things, we don't guess",
@@ -114,6 +121,14 @@ AGENCIES: list[dict] = [
         "headcount": None,
         "website": "www.seedstudios.ai",
         "focus": "Content strategy, social media, creative production",
+        "facts": {
+            "founded": "2025",
+            "age": "Under 1 year old — launched 2025",
+            "locations": ["London"],
+            "known_clients": [],
+            "awards": [],
+            "do_not_claim": "SEED is UNDER 1 YEAR OLD. Never claim years of experience, legacy clients, or established track record. No Manchester, Berlin, or any office outside London.",
+        },
         "voice": {
             "personality": "Creative strategists who blend culture with commerce",
             "tone": "Culturally sharp, commercially grounded — we get trends before they peak",
@@ -149,6 +164,13 @@ AGENCIES: list[dict] = [
         "headcount": None,
         "website": "braidr.ai",
         "focus": "Data, analytics, marketing science",
+        "facts": {
+            "founded": "2024",
+            "locations": ["London"],
+            "known_clients": [],
+            "awards": [],
+            "do_not_claim": "Do not invent specific client names, revenue figures, or team sizes beyond what's on braidr.ai",
+        },
         "voice": {
             "personality": "Marketing scientists who translate complex data into commercial decisions",
             "tone": "Intellectually rigorous but accessible — we explain, we don't obfuscate",
@@ -192,6 +214,13 @@ AGENCIES: list[dict] = [
         "headcount": None,
         "website": "disruptmarketing.co",
         "focus": "Creator economy, influencer marketing, paid social",
+        "facts": {
+            "founded": "2024",
+            "locations": ["London"],
+            "known_clients": [],
+            "awards": [],
+            "do_not_claim": "Do not invent specific client names, campaign results, or team sizes beyond what's on disruptmarketing.co",
+        },
         "voice": {
             "personality": "Creator economy strategists who connect brands with culture through influencers",
             "tone": "Culturally plugged-in, commercially sharp — we know what creators actually drive results",
@@ -233,6 +262,14 @@ AGENCIES: list[dict] = [
         "headcount": None,
         "website": "www.culture3.com",
         "focus": "Web3, emerging technology, innovation",
+        "facts": {
+            "founded": "2022",
+            "locations": ["London"],
+            "known_clients": ["TED"],
+            "partnerships": ["TED Official Creative Impact Partner"],
+            "awards": [],
+            "do_not_claim": "Only claim the TED partnership — do not invent other client names or partnerships",
+        },
         "voice": {
             "personality": "Emerging tech translators who bridge innovation and commercial reality",
             "tone": "Forward-thinking but grounded — we separate signal from noise in new tech",

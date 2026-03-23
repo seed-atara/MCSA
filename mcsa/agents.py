@@ -69,6 +69,25 @@ def _voice_context(agency: dict) -> str:
     on_voice = "\n".join(f'  - "{ex}"' for ex in voice.get("on_voice", []))
     off_voice = "\n".join(f'  - "{ex}"' for ex in voice.get("off_voice", []))
 
+    # Agency facts for grounding
+    facts = agency.get("facts", {})
+    facts_block = ""
+    if facts:
+        facts_lines = []
+        if facts.get("founded"):
+            facts_lines.append(f"Founded: {facts['founded']}")
+        if facts.get("age"):
+            facts_lines.append(f"Age: {facts['age']}")
+        if facts.get("locations"):
+            facts_lines.append(f"Locations: {', '.join(facts['locations'])}")
+        if facts.get("known_clients"):
+            facts_lines.append(f"Verified clients: {', '.join(facts['known_clients'])}")
+        if facts.get("partnerships"):
+            facts_lines.append(f"Verified partnerships: {', '.join(facts['partnerships'])}")
+        if facts.get("do_not_claim"):
+            facts_lines.append(f"DO NOT CLAIM: {facts['do_not_claim']}")
+        facts_block = "\n\nAGENCY FACTS (use these, do NOT invent others):\n" + "\n".join(facts_lines)
+
     return (
         f"\n\n--- BRAND VOICE ---\n"
         f"Agency: {agency['name']} (part of Tomorrow Group)\n"
@@ -77,7 +96,8 @@ def _voice_context(agency: dict) -> str:
         f"Positioning: {voice.get('positioning', '')}\n\n"
         f"ON-VOICE examples (write like this):\n{on_voice}\n\n"
         f"OFF-VOICE examples (NEVER write like this):\n{off_voice}\n\n"
-        f"ANTI-SLOP RULES:\n{anti_slop}\n"
+        f"ANTI-SLOP RULES:\n{anti_slop}"
+        f"{facts_block}\n"
         f"--- END BRAND VOICE ---"
     )
 
@@ -1227,11 +1247,31 @@ class ContentCalendarAgent(ResearchAgent):
         agency_name = agency["name"]
         agency_website = agency.get("website", "")
 
+        # Build facts context for the verifier
+        facts = agency.get("facts", {})
+        facts_for_verifier = ""
+        if facts:
+            facts_lines = []
+            if facts.get("founded"):
+                facts_lines.append(f"Founded: {facts['founded']}")
+            if facts.get("age"):
+                facts_lines.append(f"Age: {facts['age']}")
+            if facts.get("locations"):
+                facts_lines.append(f"ONLY these locations: {', '.join(facts['locations'])}")
+            if facts.get("known_clients"):
+                facts_lines.append(f"ONLY these verified clients: {', '.join(facts['known_clients'])}")
+            if facts.get("partnerships"):
+                facts_lines.append(f"ONLY these verified partnerships: {', '.join(facts['partnerships'])}")
+            if facts.get("do_not_claim"):
+                facts_lines.append(f"CRITICAL: {facts['do_not_claim']}")
+            facts_for_verifier = "\n\nVERIFIED AGENCY FACTS (anything contradicting these is CRITICAL):\n" + "\n".join(facts_lines)
+
         verify_system = (
             f"You are a strict fact-checker and editorial QA reviewer for {agency_name} "
             f"(Tomorrow Group). Your job is to catch ANY fabricated or low-quality content "
             f"before it's published. Be ruthless — if in doubt, flag it.\n\n"
-            f"Agency website: {agency_website}\n\n"
+            f"Agency website: {agency_website}"
+            f"{facts_for_verifier}\n\n"
             f"CHECK FOR:\n"
             f"1. FABRICATED STATISTICS — any specific number (%, X times, $amount) not from "
             f"the provided research data. [FABRICATED STAT]\n"
@@ -1239,14 +1279,17 @@ class ContentCalendarAgent(ResearchAgent):
             f"aren't in the research data. [FALSE CLAIM]\n"
             f"3. FAKE CASE STUDIES — 'we did X', 'our team in Y', 'we tested Z' not from "
             f"the agency's own website. [FAKE CASE STUDY]\n"
-            f"4. INVENTED LOCATIONS — office/team locations not verified. [INVENTED LOCATION]\n"
-            f"5. UNVERIFIABLE CLAIMS — 'our research suggests', 'we're seeing', 'early indicators "
+            f"4. INVENTED LOCATIONS — office/team locations not verified against AGENCY FACTS above. [INVENTED LOCATION]\n"
+            f"5. FALSE HISTORY — claims about years of experience, legacy, track record that "
+            f"contradict the AGENCY FACTS above. [FALSE HISTORY]\n"
+            f"6. UNVERIFIABLE CLAIMS — 'our research suggests', 'we're seeing', 'early indicators "
             f"suggest' without ANY specific source or evidence. [UNVERIFIABLE]\n"
-            f"6. GENERIC AI SLOP — cliches ('signals point to', 'fundamental shift', "
+            f"7. GENERIC AI SLOP — cliches ('signals point to', 'fundamental shift', "
             f"'smart marketers are already', 'landscape', 'game-changer'), throat-clearing "
             f"openers, vague corporate speak, generic CTAs. [SLOP]\n\n"
             f"SEVERITY GUIDE:\n"
-            f"- CRITICAL: Fabricated stats, false competitor claims, fake case studies, invented locations. "
+            f"- CRITICAL: Fabricated stats, false competitor claims, fake case studies, "
+            f"invented locations, FALSE HISTORY (wrong age/experience/locations). "
             f"These MUST be fixed.\n"
             f"- HIGH: Unverifiable specific claims ('our research suggests X' with no source). Fix these.\n"
             f"- MEDIUM: Generic phrasing that could be sharper but isn't factually wrong. "
