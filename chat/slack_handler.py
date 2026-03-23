@@ -756,6 +756,20 @@ def _tool_suggest_content(sb, params: dict) -> str:
 
     parts = [f"# Content Intelligence for {agency}\n"]
 
+    # 0. Inject brand voice guidelines
+    from mcsa.config import AGENCIES, TG_VOICE
+    agency_config = next((a for a in AGENCIES if a["name"] == agency), None)
+    if agency_config and agency_config.get("voice"):
+        v = agency_config["voice"]
+        anti_slop = "; ".join(TG_VOICE["anti_slop_rules"][:5])
+        parts.append(
+            f"## Brand Voice\n"
+            f"Personality: {v['personality']}\n"
+            f"Tone: {v['tone']}\n"
+            f"Positioning: {v['positioning']}\n"
+            f"Anti-slop: {anti_slop}\n"
+        )
+
     # 1. Get rising topics
     topics = sb.table("topics").select("topic, momentum, category, relevance").eq(
         "agency_name", agency

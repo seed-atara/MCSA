@@ -25,6 +25,49 @@ from core.config import (  # noqa: F401
 # ---------------------------------------------------------------------------
 # Tomorrow Group agencies
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Tomorrow Group brand voice — shared anti-slop rules for all agencies
+# ---------------------------------------------------------------------------
+TG_VOICE = {
+    "group_identity": (
+        "Tomorrow Group is a collective of specialist agencies. Each agency has its own "
+        "expertise but shares the group's commitment to evidence-based, commercially-focused "
+        "work. The group's edge is specialist depth — not generalist breadth."
+    ),
+    "anti_slop_rules": [
+        "NEVER use: 'In today's rapidly evolving landscape', 'leverage', 'synergy', "
+        "'cutting-edge', 'game-changer', 'unlock', 'dive deep', 'holistic'",
+        "NEVER start posts with a question unless it's genuinely provocative",
+        "NEVER use more than 3 hashtags per LinkedIn post",
+        "NEVER include external links in LinkedIn post body (kills reach)",
+        "Every claim MUST cite a specific source, date, or data point from the research",
+        "Every post MUST take a position worth defending — no fence-sitting",
+        "Acknowledge counterarguments rather than ignoring them",
+        "Write like a sharp industry insider, not a marketing brochure",
+        "Prefer concrete numbers over vague qualifiers ('37% increase' not 'significant growth')",
+        "First sentence must earn the 'see more' click — no throat-clearing",
+    ],
+    "format_rules": {
+        "linkedin_post": {
+            "length": "150-250 words",
+            "structure": "Hook (1 line) → Insight (2-3 paras) → Position (1 para) → CTA (1 line)",
+            "hashtags": "2-3 max, industry-specific, no #marketing #digital",
+            "tone": "Authoritative insider, not corporate",
+        },
+        "linkedin_carousel": {
+            "slides": "6-10 slides",
+            "structure": "Provocative title slide → Problem → Evidence → Framework → Takeaway → CTA",
+            "design_notes": "One key point per slide, minimal text, strong visual hierarchy",
+        },
+        "blog_article": {
+            "length": "800-1200 words",
+            "structure": "Contrarian hook → Evidence → Framework → Application → Next steps",
+            "seo_notes": "Include target keyword in title and first 100 words",
+        },
+    },
+}
+
+
 AGENCIES: list[dict] = [
     {
         "name": "Found",
@@ -33,6 +76,21 @@ AGENCIES: list[dict] = [
         "headcount": 70,
         "website": "www.found.co.uk",
         "focus": "SEO, PPC, digital performance marketing",
+        "voice": {
+            "personality": "Data-obsessed performance experts who cut through SEO hype with evidence",
+            "tone": "Direct, metric-driven, slightly contrarian — we prove things, we don't guess",
+            "positioning": "The agency that shows receipts. Real performance data, not vanity metrics.",
+            "on_voice": [
+                "Here's what actually happened when we tested this",
+                "The data says X, which contradicts the popular take",
+                "3 things we measured that changed our approach",
+            ],
+            "off_voice": [
+                "We're passionate about helping brands grow",
+                "In today's competitive digital landscape",
+                "Our award-winning team delivers results",
+            ],
+        },
         "competitor_guidance": (
             "UK-based SEO and PPC agencies. Direct service competitors "
             "offering search engine optimisation, pay-per-click management, "
@@ -56,6 +114,21 @@ AGENCIES: list[dict] = [
         "headcount": None,
         "website": "www.seedstudios.ai",
         "focus": "Content strategy, social media, creative production",
+        "voice": {
+            "personality": "Creative strategists who blend culture with commerce",
+            "tone": "Culturally sharp, commercially grounded — we get trends before they peak",
+            "positioning": "The agency that makes brands culturally relevant, not just visible.",
+            "on_voice": [
+                "This trend is about to hit mainstream — here's why brands should care now",
+                "We tested 3 content formats and here's what actually drove engagement",
+                "The creator economy just shifted — here's what it means for your strategy",
+            ],
+            "off_voice": [
+                "Content is king",
+                "We create thumb-stopping content",
+                "Our creative team is passionate about storytelling",
+            ],
+        },
         "competitor_guidance": (
             "UK-based social media and content agencies. Competitors that win "
             "briefs for social media strategy, content creation, creative campaigns, "
@@ -76,6 +149,21 @@ AGENCIES: list[dict] = [
         "headcount": None,
         "website": "braidr.ai",
         "focus": "Data, analytics, marketing science",
+        "voice": {
+            "personality": "Marketing scientists who translate complex data into commercial decisions",
+            "tone": "Intellectually rigorous but accessible — we explain, we don't obfuscate",
+            "positioning": "The agency that turns data into decisions, not dashboards.",
+            "on_voice": [
+                "We ran the attribution model and the results surprised us",
+                "Here's why your current measurement approach is costing you money",
+                "The gap between data collection and data-driven decisions is where value lives",
+            ],
+            "off_voice": [
+                "Data is the new oil",
+                "Our proprietary AI platform delivers insights",
+                "We harness the power of big data",
+            ],
+        },
         "competitor_guidance": (
             "UK-based data and analytics agencies or consultancies. Competitors "
             "offering marketing measurement, attribution modelling, marketing mix "
@@ -104,6 +192,21 @@ AGENCIES: list[dict] = [
         "headcount": None,
         "website": "disruptmarketing.co",
         "focus": "Paid media, programmatic advertising",
+        "voice": {
+            "personality": "Media strategists who find unfair advantages in paid channels",
+            "tone": "Bold, commercially sharp, results-first — we spend money to make money",
+            "positioning": "The agency that makes every media pound work harder than the last.",
+            "on_voice": [
+                "We moved 30% of budget from X to Y and here's what happened",
+                "The programmatic landscape just changed — here's what smart buyers do now",
+                "Most brands waste 40% of their media spend. Here's how to find yours.",
+            ],
+            "off_voice": [
+                "We offer a full-service media solution",
+                "Our programmatic capabilities drive results",
+                "Digital advertising is transforming how brands connect",
+            ],
+        },
         "competitor_guidance": (
             "UK-based paid media and programmatic agencies. Competitors that plan "
             "and buy paid media — display, programmatic, paid social, PPC at scale. "
@@ -125,6 +228,21 @@ AGENCIES: list[dict] = [
         "headcount": None,
         "website": "www.culture3.com",
         "focus": "Web3, emerging technology, innovation",
+        "voice": {
+            "personality": "Emerging tech translators who bridge innovation and commercial reality",
+            "tone": "Forward-thinking but grounded — we separate signal from noise in new tech",
+            "positioning": "The agency that makes emerging technology commercially useful, not just exciting.",
+            "on_voice": [
+                "Everyone's talking about X but here's what actually matters for brands",
+                "We tested this Web3 approach with a real brand — here's what we learned",
+                "The post-hype reality of [technology] is more interesting than the hype",
+            ],
+            "off_voice": [
+                "Web3 will revolutionise everything",
+                "The metaverse is the future of marketing",
+                "Blockchain technology enables unprecedented possibilities",
+            ],
+        },
         "competitor_guidance": (
             "Web3 marketing and strategy agencies. Competitors offering Web3 "
             "go-to-market, community building, token marketing, metaverse strategy, "

@@ -53,7 +53,32 @@ def _governance() -> str:
         f"Output is classified Internal — not for client distribution without MD review.\n"
         f"Include a CONFIDENCE label (HIGH / MEDIUM / LOW) for each major claim.\n"
         f"If data is insufficient to make a claim, say so explicitly rather than speculating.\n"
+        f"Every claim must cite a specific source, date, or data point — never invent evidence.\n"
         f"--- END GOVERNANCE ---"
+    )
+
+
+def _voice_context(agency: dict) -> str:
+    """Build brand voice context for content-generating agents."""
+    from .config import TG_VOICE
+    voice = agency.get("voice", {})
+    if not voice:
+        return ""
+
+    anti_slop = "\n".join(f"- {r}" for r in TG_VOICE["anti_slop_rules"])
+    on_voice = "\n".join(f'  - "{ex}"' for ex in voice.get("on_voice", []))
+    off_voice = "\n".join(f'  - "{ex}"' for ex in voice.get("off_voice", []))
+
+    return (
+        f"\n\n--- BRAND VOICE ---\n"
+        f"Agency: {agency['name']} (part of Tomorrow Group)\n"
+        f"Personality: {voice.get('personality', '')}\n"
+        f"Tone: {voice.get('tone', '')}\n"
+        f"Positioning: {voice.get('positioning', '')}\n\n"
+        f"ON-VOICE examples (write like this):\n{on_voice}\n\n"
+        f"OFF-VOICE examples (NEVER write like this):\n{off_voice}\n\n"
+        f"ANTI-SLOP RULES:\n{anti_slop}\n"
+        f"--- END BRAND VOICE ---"
     )
 
 
@@ -529,6 +554,7 @@ class DIFFAgent(ResearchAgent):
                 f"## Share-of-Voice Ranking\n"
                 f"Rank competitors by overall content presence with trend direction (up/down/stable).\n\n"
                 f"FORMAT: Structured markdown for Slack + Confluence."
+                + _voice_context(agency)
                 + _governance()
             )
         else:
@@ -816,6 +842,7 @@ class ContentStrategyAgent(ResearchAgent):
             f"Larger initiatives to build lasting authority in key areas.\n\n"
             f"Be specific and actionable — not generic advice. Every recommendation must "
             f"reference specific competitive intelligence from the data provided."
+            + _voice_context(agency)
             + _governance()
         )
 
@@ -1137,10 +1164,33 @@ class ContentCalendarAgent(ResearchAgent):
             f"Breakdown of formats, platforms, and posting rhythm.\n\n"
             f"## Key Metrics to Track\n"
             f"What success looks like for each post."
+            + _voice_context(agency)
             + _governance()
         )
 
-        user = f"COMPETITIVE INTELLIGENCE DATA:{upstream}"
+        # Fetch agency's own recent content for grounding
+        own_content = ""
+        agency_website = agency.get("website", "")
+        if agency_website:
+            try:
+                from core.tools import tavily_crawl
+                own_pages = await tavily_crawl(f"https://{agency_website}", max_depth=1, limit=5)
+                if own_pages and own_pages.get("results"):
+                    snippets = []
+                    for page in own_pages["results"][:3]:
+                        title = page.get("title", "")
+                        content = page.get("raw_content", page.get("content", ""))[:500]
+                        if title:
+                            snippets.append(f"- {title}: {content}")
+                    if snippets:
+                        own_content = (
+                            f"\n\n## {agency_name}'S OWN RECENT CONTENT (reference for voice and topics)\n"
+                            + "\n".join(snippets)
+                        )
+            except Exception:
+                pass  # Don't fail the calendar if own content fetch fails
+
+        user = f"COMPETITIVE INTELLIGENCE DATA:{upstream}{own_content}"
         return await self._call_claude(system, user, max_tokens=_max_tokens(cadence), context=context)
 
     def parse_calendar_json(self, report: str) -> list[dict]:
