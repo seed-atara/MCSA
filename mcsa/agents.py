@@ -1218,7 +1218,7 @@ class ContentCalendarAgent(ResearchAgent):
             console.print(f"[yellow]  Calendar JSON parse failed: {e}[/yellow]")
             return []
 
-    async def verify_and_rewrite(self, agency: dict, calendar_items: list[dict], context: dict, max_iterations: int = 5) -> list[dict]:
+    async def verify_and_rewrite(self, agency: dict, calendar_items: list[dict], context: dict, max_iterations: int = 3) -> list[dict]:
         """Verification loop: check each post draft for fabricated claims and rewrite until clean.
 
         Each draft is verified → rewritten → re-verified, up to max_iterations.
@@ -1245,15 +1245,22 @@ class ContentCalendarAgent(ResearchAgent):
             f"6. GENERIC AI SLOP — cliches ('signals point to', 'fundamental shift', "
             f"'smart marketers are already', 'landscape', 'game-changer'), throat-clearing "
             f"openers, vague corporate speak, generic CTAs. [SLOP]\n\n"
-            f"Be STRICT on slop. A post that reads like it could have been written by any AI "
-            f"about any agency is NOT publishable. It must have a distinctive voice and "
-            f"specific, grounded perspective.\n\n"
+            f"SEVERITY GUIDE:\n"
+            f"- CRITICAL: Fabricated stats, false competitor claims, fake case studies, invented locations. "
+            f"These MUST be fixed.\n"
+            f"- HIGH: Unverifiable specific claims ('our research suggests X' with no source). Fix these.\n"
+            f"- MEDIUM: Generic phrasing that could be sharper but isn't factually wrong. "
+            f"Acceptable if the rest of the post is strong.\n"
+            f"- LOW: Minor style preferences. Pass the post.\n\n"
+            f"A post with ONLY MEDIUM/LOW issues should PASS. A post expressing a genuine "
+            f"opinion ('We believe X', 'Our position is Y') is NOT slop — that's voice. "
+            f"Only fail posts with CRITICAL or HIGH issues.\n\n"
             f"OUTPUT: A JSON object:\n"
             f"```json\n"
-            f'{{"pass": true/false, "issues": ["issue 1", "issue 2"], '
+            f'{{"pass": true/false, "issues": ["issue 1"], '
             f'"severity": "CLEAN/LOW/MEDIUM/HIGH/CRITICAL"}}\n'
             f"```\n"
-            f"pass=true ONLY if the draft has zero issues. Be strict."
+            f"pass=true if no CRITICAL or HIGH issues remain."
         )
 
         rewrite_system = (

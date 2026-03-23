@@ -191,26 +191,26 @@ AGENCIES: list[dict] = [
         "champion": None,
         "headcount": None,
         "website": "disruptmarketing.co",
-        "focus": "Paid media, programmatic advertising",
+        "focus": "Creator economy, influencer marketing, paid social",
         "voice": {
-            "personality": "Media strategists who find unfair advantages in paid channels",
-            "tone": "Bold, commercially sharp, results-first — we spend money to make money",
-            "positioning": "The agency that makes every media pound work harder than the last.",
+            "personality": "Creator economy strategists who connect brands with culture through influencers",
+            "tone": "Culturally plugged-in, commercially sharp — we know what creators actually drive results",
+            "positioning": "The agency that turns creator partnerships into measurable business outcomes.",
             "on_voice": [
-                "We moved 30% of budget from X to Y and here's what happened",
-                "The programmatic landscape just changed — here's what smart buyers do now",
-                "Most brands waste 40% of their media spend. Here's how to find yours.",
+                "This creator partnership drove X because the audience fit was right, not because the follower count was high",
+                "The creator economy just shifted — here's what brands paying attention are doing differently",
+                "Most influencer campaigns fail because brands buy reach, not relevance",
             ],
             "off_voice": [
-                "We offer a full-service media solution",
-                "Our programmatic capabilities drive results",
-                "Digital advertising is transforming how brands connect",
+                "We offer a full-service influencer solution",
+                "Our creator network delivers results",
+                "Influencer marketing is transforming how brands connect",
             ],
         },
         "competitor_guidance": (
-            "UK-based paid media and programmatic agencies. Competitors that plan "
-            "and buy paid media — display, programmatic, paid social, PPC at scale. "
-            "Must be AGENCIES, not ad-tech platforms or DSPs like StackAdapt or DV360."
+            "UK-based influencer marketing and creator economy agencies. Competitors "
+            "that plan and execute creator partnerships, influencer campaigns, paid social "
+            "with creators, and talent management. Must be AGENCIES, not platforms or tools."
         ),
         "manual_competitors": [
             "Ogilvy",
@@ -219,6 +219,11 @@ AGENCIES: list[dict] = [
             "Viral Nation",
             "Billion Dollar Boy",
             "Goat Agency",
+            "Whalar",
+            "Kyra",
+            "Seen Connects",
+            "VAMP",
+            "Connect Management",
         ],
     },
     {
