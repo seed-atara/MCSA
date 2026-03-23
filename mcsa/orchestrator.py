@@ -466,9 +466,17 @@ def _ensure_manual_competitors(registry: list[dict], manual_names: list[str]) ->
     return registry
 
 
+    # Modules that are internal data (JSON) — don't push to Slack as reports
+_INTERNAL_MODULES = {"topics", "key_people", "content_calendar"}
+
+
 def _save_formatted(agency_name: str, module: str, cadence: str, report: str, raw_path: Path) -> None:
     """Save Slack and Confluence formatted versions alongside the raw report,
     then deliver to Slack if enabled."""
+    # Skip Slack/Confluence delivery for internal data modules (contain raw JSON)
+    if module in _INTERNAL_MODULES:
+        return
+
     # Slack version
     if cadence == CADENCE_DAILY:
         slack_content = formatter.format_slack_daily(agency_name, module, report)
