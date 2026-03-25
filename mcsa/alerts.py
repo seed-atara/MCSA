@@ -106,7 +106,7 @@ class AlertDetector:
         prev_rows = storage._sb_select(
             "registries",
             {"agency_name": safe_name},
-            order_by="created_at",
+            order_by="updated_at",
             limit=2,
         )
 
