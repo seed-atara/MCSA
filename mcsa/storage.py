@@ -562,3 +562,71 @@ def load_content_calendar(agency_name: str, week_start: str | None = None) -> di
     except Exception as e:
         console.print(f"[yellow]Content calendar load failed: {e}[/yellow]")
         return None
+
+
+# ---------------------------------------------------------------------------
+# Social Followers
+# ---------------------------------------------------------------------------
+
+def save_follower_snapshot(agency_name: str, followers: list[dict]) -> None:
+    """Save a follower count snapshot for an agency's competitors."""
+    now = datetime.now().isoformat()
+    for f in followers:
+        name = f.get("name", "").strip()
+        if not name:
+            continue
+        row = {
+            "agency_name": agency_name,
+            "competitor_name": name,
+            "linkedin_followers": f.get("linkedin_followers"),
+            "linkedin_employees": f.get("linkedin_employees"),
+            "instagram_handle": f.get("instagram_handle", ""),
+            "tiktok_handle": f.get("tiktok_handle", ""),
+            "twitter_handle": f.get("twitter_handle", ""),
+            "notes": f.get("notes", ""),
+            "checked_at": now,
+        }
+        _sb_insert("competitor_followers", row)
+
+
+def load_follower_history(agency_name: str, competitor_name: str = None, limit: int = 10) -> list[dict]:
+    """Load follower snapshots, optionally for a specific competitor."""
+    sb = _get_supabase()
+    if not sb:
+        return []
+    try:
+        query = sb.table("competitor_followers").select("*").eq("agency_name", agency_name)
+        if competitor_name:
+            query = query.eq("competitor_name", competitor_name)
+        query = query.order("checked_at", desc=True).limit(limit)
+        result = query.execute()
+        return result.data or []
+    except Exception as e:
+        console.print(f"[yellow]Follower history load failed: {e}[/yellow]")
+        return []
+
+
+def load_latest_followers(agency_name: str) -> dict:
+    """Load the most recent follower counts per competitor for an agency."""
+    sb = _get_supabase()
+    if not sb:
+        return {}
+    try:
+        query = (
+            sb.table("competitor_followers")
+            .select("competitor_name, linkedin_followers, linkedin_employees, checked_at")
+            .eq("agency_name", agency_name)
+            .order("checked_at", desc=True)
+            .limit(100)
+        )
+        result = query.execute()
+        # Dedupe to latest per competitor
+        latest: dict = {}
+        for row in (result.data or []):
+            name = row.get("competitor_name", "")
+            if name and name not in latest:
+                latest[name] = row
+        return latest
+    except Exception as e:
+        console.print(f"[yellow]Latest followers load failed: {e}[/yellow]")
+        return {}

@@ -1404,3 +1404,101 @@ class ContentCalendarAgent(ResearchAgent):
             verified_items.append(item)
 
         return verified_items
+
+
+# ---------------------------------------------------------------------------
+# Module 10 — Social Follower Tracking
+# ---------------------------------------------------------------------------
+
+class SocialFollowerAgent(ResearchAgent):
+    """Tracks competitor social media follower counts and growth trends."""
+
+    def __init__(self):
+        super().__init__(
+            "Social Follower Agent",
+            "Extracts follower counts from competitor LinkedIn pages and social profiles",
+        )
+
+    async def research(self, agency: dict, context: dict) -> str:
+        """Extract follower counts for all competitors with LinkedIn URLs."""
+        from core.tools import tavily_extract
+
+        agency_name = agency["name"]
+        competitors = context.get("competitors", [])
+        previous_data = context.get("previous_followers", {})
+
+        results = []
+        extract_urls = []
+        extract_comps = []
+
+        for comp in competitors:
+            linkedin_url = comp.get("linkedin_url", "")
+            website = comp.get("website", "")
+            if linkedin_url:
+                extract_urls.append(linkedin_url)
+                extract_comps.append(comp)
+            elif website:
+                # Try to find LinkedIn page via search
+                extract_urls.append(website)
+                extract_comps.append(comp)
+
+        if not extract_urls:
+            return json.dumps({"agency": agency_name, "followers": [], "note": "No LinkedIn URLs in registry"})
+
+        # Extract in batches of 5
+        all_extracted = []
+        for i in range(0, len(extract_urls), 5):
+            batch_urls = extract_urls[i:i+5]
+            try:
+                extracted = await tavily_extract(batch_urls)
+                all_extracted.extend(extracted)
+            except Exception as e:
+                console.print(f"[yellow]  Follower extract batch failed: {e}[/yellow]")
+                all_extracted.extend([{}] * len(batch_urls))
+
+        # Now ask Claude to parse follower counts from the extracted content
+        extracts_text = ""
+        for comp, extract in zip(extract_comps, all_extracted):
+            content = extract.get("raw_content", extract.get("content", ""))[:2000]
+            if content:
+                extracts_text += f"\n\n## {comp.get('name', '?')}\nURL: {extract.get('url', '?')}\n{content}"
+
+        if not extracts_text:
+            return json.dumps({"agency": agency_name, "followers": [], "note": "No content extracted"})
+
+        prev_context = ""
+        if previous_data:
+            prev_context = f"\n\nPREVIOUS FOLLOWER DATA (compare for growth):\n{json.dumps(previous_data, indent=2)}"
+
+        system = (
+            f"You are extracting social media metrics for {agency_name}'s competitors.\n\n"
+            f"From the page content below, extract:\n"
+            f"- LinkedIn follower count (look for 'X followers' or 'X,XXX followers')\n"
+            f"- LinkedIn employee count (look for 'X employees' or 'X,XXX employees on LinkedIn')\n"
+            f"- Any other social profiles mentioned (Instagram, TikTok, X/Twitter handles)\n\n"
+            f"If a number is not clearly visible, set it to null — do NOT guess or estimate.\n\n"
+            f"OUTPUT: A ```json``` block:\n"
+            f"```json\n"
+            f"[\n"
+            f'  {{"name": "Competitor", "linkedin_followers": 12500, "linkedin_employees": 150, '
+            f'"instagram_handle": "@handle", "tiktok_handle": "@handle", '
+            f'"twitter_handle": "@handle", "notes": "any relevant observations"}}\n'
+            f"]\n"
+            f"```\n\n"
+            f"Then a brief markdown summary of notable findings: who's growing, who's largest, "
+            f"any surprises."
+            + _governance()
+        )
+
+        user = f"EXTRACTED PAGE CONTENT:{extracts_text}{prev_context}"
+        return await self._call_claude(system, user, max_tokens=2000, context=context)
+
+    def parse_followers_json(self, report: str) -> list[dict]:
+        """Extract the JSON followers array from a social follower report."""
+        try:
+            start = report.index("```json") + 7
+            end = report.index("```", start)
+            return json.loads(report[start:end].strip())
+        except (ValueError, json.JSONDecodeError) as e:
+            console.print(f"[yellow]  Followers JSON parse failed: {e}[/yellow]")
+            return []

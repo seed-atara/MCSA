@@ -19,7 +19,7 @@ from core.tools import clear_sources, get_all_sources
 from core.cost_tracker import cost_tracker
 
 from .config import AGENCIES, REPORTS, CADENCE_DAILY, CADENCE_WEEKLY, CADENCE_MONTHLY
-from .agents import RegistryAgent, LinkedInAgent, IndustryAgent, DIFFAgent, WebsiteAgent, ContentStrategyAgent, TopicIntelligenceAgent, KeyPeopleAgent, ContentCalendarAgent
+from .agents import RegistryAgent, LinkedInAgent, IndustryAgent, DIFFAgent, WebsiteAgent, ContentStrategyAgent, TopicIntelligenceAgent, KeyPeopleAgent, ContentCalendarAgent, SocialFollowerAgent
 from . import storage
 from . import formatter
 from .slack import deliver_to_slack
@@ -65,6 +65,7 @@ class MCSAOrchestrator:
         self.topic_intelligence_agent = TopicIntelligenceAgent()
         self.key_people_agent = KeyPeopleAgent()
         self.content_calendar_agent = ContentCalendarAgent()
+        self.social_follower_agent = SocialFollowerAgent()
 
     def _report_progress(self, phase: int, total: int, description: str) -> None:
         if self.progress_callback:
@@ -291,6 +292,29 @@ class MCSAOrchestrator:
                     storage.save_key_people(agency_name, parsed_people)
                     console.print(f"[green]  Key People: {len(parsed_people)} people saved to Supabase[/green]")
 
+        # ── Phase 2b: Social Follower Tracking (weekly/monthly) ──────────
+        if cadence in (CADENCE_WEEKLY, CADENCE_MONTHLY) and competitors:
+            console.print(f"[dim]  Module 10: Social Follower Tracking[/dim]")
+            prev_followers = storage.load_latest_followers(agency_name)
+            follower_ctx = {
+                "competitors": competitors,
+                "cadence": cadence,
+                "previous_followers": prev_followers,
+            }
+            try:
+                follower_report = await self.social_follower_agent.research(agency, follower_ctx)
+                reports["social_followers"] = follower_report
+                path = storage.save_report(agency_name, "social_followers", cadence, follower_report)
+                console.print(f"[green]  Social Followers: {len(follower_report)} chars -> {path.name}[/green]")
+
+                parsed = self.social_follower_agent.parse_followers_json(follower_report)
+                if parsed:
+                    storage.save_follower_snapshot(agency_name, parsed)
+                    console.print(f"[green]  Followers: {len(parsed)} snapshots saved to Supabase[/green]")
+            except Exception as e:
+                console.print(f"[red]  Social Followers failed: {e}[/red]")
+                reports["social_followers"] = f"[Error: {e}]"
+
         # ── Phase 3: DIFF (depends on phase 2) ───────────────────────────
         if cadence in (CADENCE_WEEKLY, CADENCE_MONTHLY):
             console.print(f"[dim]  Module 4: Competitive DIFF[/dim]")
@@ -467,7 +491,7 @@ def _ensure_manual_competitors(registry: list[dict], manual_names: list[str]) ->
 
 
     # Modules that are internal data (JSON) — don't push to Slack as reports
-_INTERNAL_MODULES = {"topics", "key_people", "content_calendar"}
+_INTERNAL_MODULES = {"topics", "key_people", "content_calendar", "social_followers"}
 
 
 def _save_formatted(agency_name: str, module: str, cadence: str, report: str, raw_path: Path) -> None:

@@ -382,6 +382,21 @@ TOOLS = [
             "required": [],
         },
     },
+    {
+        "name": "get_follower_trends",
+        "description": (
+            "Get LinkedIn follower counts and growth trends for an agency's competitors. "
+            "Shows follower numbers, employee counts, and changes over time."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "agency": {"type": "string", "description": "Agency name (required)."},
+                "competitor": {"type": "string", "description": "Specific competitor name. Omit for all."},
+            },
+            "required": ["agency"],
+        },
+    },
 ]
 
 SYSTEM_PROMPT = """You are the MCSA Intelligence Analyst for Tomorrow Group — a holding company
@@ -488,6 +503,8 @@ def _execute_tool(name: str, input_data: dict) -> str:
             return _tool_get_key_people(sb, input_data)
         elif name == "suggest_content":
             return _tool_suggest_content(sb, input_data)
+        elif name == "get_follower_trends":
+            return _tool_get_follower_trends(sb, input_data)
         elif name == "get_content_calendar":
             return _tool_get_content_calendar(sb, input_data)
         elif name == "generate_post_draft":
@@ -747,6 +764,67 @@ def _tool_generate_post_draft(sb, params: dict) -> str:
             parts.append(f"- {p['name']} ({p.get('company','?')}): {p.get('recent_activity','')[:150]}")
 
     return "\n".join(parts)
+
+
+def _tool_get_follower_trends(sb, params: dict) -> str:
+    agency = params.get("agency", "")
+    competitor = params.get("competitor")
+    if not agency:
+        return "Please specify an agency name."
+
+    query = sb.table("competitor_followers").select("*").eq("agency_name", agency)
+    if competitor:
+        query = query.eq("competitor_name", competitor)
+    query = query.order("checked_at", desc=True).limit(50)
+    rows = query.execute()
+
+    if not rows.data:
+        return f"No follower data for {agency} yet. Data is collected during weekly surveillance runs."
+
+    # Group by competitor, show latest + trend
+    by_comp: dict = {}
+    for r in rows.data:
+        name = r.get("competitor_name", "?")
+        if name not in by_comp:
+            by_comp[name] = []
+        by_comp[name].append(r)
+
+    parts = [f"## {agency} — Competitor Follower Trends\n"]
+    for name, snapshots in sorted(by_comp.items()):
+        latest = snapshots[0]
+        li_followers = latest.get("linkedin_followers")
+        li_employees = latest.get("linkedin_employees")
+        checked = latest.get("checked_at", "?")[:10]
+
+        line = f"**{name}**"
+        if li_followers:
+            line += f" — {li_followers:,} LinkedIn followers"
+        if li_employees:
+            line += f", {li_employees:,} employees"
+        line += f" (as of {checked})"
+
+        # Show growth if we have history
+        if len(snapshots) > 1 and li_followers and snapshots[-1].get("linkedin_followers"):
+            prev = snapshots[-1]["linkedin_followers"]
+            delta = li_followers - prev
+            if delta > 0:
+                line += f" | +{delta:,} since {snapshots[-1]['checked_at'][:10]}"
+            elif delta < 0:
+                line += f" | {delta:,} since {snapshots[-1]['checked_at'][:10]}"
+
+        ig = latest.get("instagram_handle", "")
+        tt = latest.get("tiktok_handle", "")
+        tw = latest.get("twitter_handle", "")
+        socials = []
+        if ig: socials.append(f"IG: {ig}")
+        if tt: socials.append(f"TikTok: {tt}")
+        if tw: socials.append(f"X: {tw}")
+        if socials:
+            line += f"\n  Social: {', '.join(socials)}"
+
+        parts.append(line)
+
+    return "\n\n".join(parts)
 
 
 def _tool_suggest_content(sb, params: dict) -> str:
