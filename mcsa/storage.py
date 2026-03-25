@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import json
 import hashlib
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 
 from rich.console import Console
@@ -603,6 +603,57 @@ def load_follower_history(agency_name: str, competitor_name: str = None, limit: 
         return result.data or []
     except Exception as e:
         console.print(f"[yellow]Follower history load failed: {e}[/yellow]")
+        return []
+
+
+# ---------------------------------------------------------------------------
+# Competitor Metrics (longitudinal trend tracking)
+# ---------------------------------------------------------------------------
+
+def save_competitor_metrics(agency_name: str, competitor_name: str, metrics: dict) -> None:
+    """Save weekly structured metrics for a competitor.
+
+    metrics should contain keys like:
+        publishing_frequency, primary_topics[], positioning_keywords[],
+        format_mix, activity_level
+    """
+    _sb_upsert("competitor_metrics", {
+        "agency_name": agency_name,
+        "competitor_name": competitor_name,
+        "week": date.today().isocalendar()[1],  # week number
+        "year": date.today().year,
+        **metrics,
+        "updated_at": datetime.now().isoformat(),
+    }, on_conflict="agency_name,competitor_name,year,week")
+
+
+def load_competitor_trend(agency_name: str, competitor_name: str | None = None, weeks: int = 4) -> list[dict]:
+    """Load weekly metrics for trend analysis.
+
+    Returns list of metric rows sorted by year/week descending, limited to last N weeks.
+    """
+    sb = _get_supabase()
+    if not sb:
+        return []
+    try:
+        query = sb.table("competitor_metrics").select("*").eq("agency_name", agency_name)
+        if competitor_name:
+            query = query.eq("competitor_name", competitor_name)
+        query = query.order("year", desc=True).order("week", desc=True).limit(weeks * 20)
+        result = query.execute()
+        rows = result.data or []
+        # Filter to last N weeks by (year, week) pairs
+        seen_weeks: set[tuple[int, int]] = set()
+        filtered = []
+        for row in rows:
+            yw = (row.get("year", 0), row.get("week", 0))
+            seen_weeks.add(yw)
+            if len(seen_weeks) > weeks:
+                break
+            filtered.append(row)
+        return filtered
+    except Exception as e:
+        console.print(f"[yellow]Competitor metrics load failed: {e}[/yellow]")
         return []
 
 

@@ -236,6 +236,19 @@ class RegistryAgent(ResearchAgent):
                 manual_str2 = " OR ".join(f'"{n}"' for n in manual_names[5:10])
                 queries.append(f"({manual_str2}) agency UK services website")
 
+        # Explicitly hunt for LinkedIn company pages
+        all_comp_names = list(manual_names or [])
+        # Add existing registry names not already in manual list
+        for c in existing:
+            cname = c.get("name", "")
+            if cname and cname not in all_comp_names:
+                all_comp_names.append(cname)
+        # Batch LinkedIn lookups (up to 3 names per query to stay efficient)
+        for i in range(0, min(len(all_comp_names), 15), 3):
+            batch = all_comp_names[i:i + 3]
+            batch_str = " OR ".join(f'"{n}"' for n in batch)
+            queries.append(f"site:linkedin.com/company ({batch_str})")
+
         combined = await _deep_search(queries, max_results=5)
 
         existing_json = ""
@@ -275,8 +288,13 @@ class RegistryAgent(ResearchAgent):
             f"- Discovered (source: \"discovered\"): AI-identified from research. Include when relevant.\n\n"
             f"For each competitor, provide:\n"
             f"- Name, Website, Sector, Size (approx employees), Key services (top 3-5)\n"
-            f"- LinkedIn URL (if findable), Active channels, Threat level (HIGH/MED/LOW)\n"
+            f"- LinkedIn URL, Active channels, Threat level (HIGH/MED/LOW)\n"
             f"- Confidence (HIGH/MED/LOW), Source (\"manual\" or \"discovered\")\n\n"
+            f"For LinkedIn URL: search linkedin.com/company/{{company-name-slug}}. "
+            f"The URL format is always linkedin.com/company/name-with-hyphens. "
+            f"Do NOT return 'Not found' — always attempt to construct the likely URL "
+            f"even if not confirmed (e.g. linkedin.com/company/agency-name). "
+            f"Mark confidence LOW if unverified.\n\n"
             f"Target: All manual competitors + up to 5 additional discovered ones.\n\n"
             f"OUTPUT: First a ```json``` array, then markdown summary with changes, "
             f"review checklist, and data gaps."
@@ -342,6 +360,18 @@ class LinkedInAgent(ResearchAgent):
                 f'({names_str}) LinkedIn "video" OR "carousel" OR "newsletter" content format',
             ]
 
+            # Supplement with competitor blog/insights pages (top 5 with websites)
+            blog_count = 0
+            for c in competitors:
+                if blog_count >= 5:
+                    break
+                website = c.get("website", "")
+                if _valid_website(website):
+                    # Strip protocol for site: query
+                    domain = website.replace("https://", "").replace("http://", "").rstrip("/")
+                    queries.append(f"site:{domain} blog OR insights OR news 2026")
+                    blog_count += 1
+
         search_fn = _gather_for_cadence(cadence)
         combined = await search_fn(queries)
 
@@ -363,6 +393,11 @@ class LinkedInAgent(ResearchAgent):
                 f"- Post summary (1 sentence), theme tag, engagement signal (HIGH/MED/LOW)\n\n"
                 f"Then: Top 3 trending topics in {agency_focus} on LinkedIn.\n"
                 f"Signal vs noise verdict: 1 sentence.\n\n"
+                f"CRITICAL: If competitor-specific data is insufficient, be honest about it. "
+                f"Write a SHORT report covering only what you actually found. DO NOT pad with "
+                f"generic LinkedIn best practices, algorithm tips, or industry advice. A 500-word "
+                f"report with real intelligence beats a 3000-word report of generic advice. "
+                f"Say \"Insufficient data for [competitor]\" rather than inventing analysis.\n\n"
                 f"FORMAT: Concise bullets for Slack. If no activity detected, say so."
                 + _governance()
             )
@@ -384,6 +419,11 @@ class LinkedInAgent(ResearchAgent):
                 f"10. Topic authority map — which competitor owns which topic, and where authority is weak or contested\n"
                 f"11. Hiring signals — competitor hiring posts, team growth indicators, new role announcements\n"
                 f"12. Employee movement — key people joining or leaving competitors\n\n"
+                f"CRITICAL: If competitor-specific data is insufficient, be honest about it. "
+                f"Write a SHORT report covering only what you actually found. DO NOT pad with "
+                f"generic LinkedIn best practices, algorithm tips, or industry advice. A 500-word "
+                f"report with real intelligence beats a 3000-word report of generic advice. "
+                f"Say \"Insufficient data for [competitor]\" rather than inventing analysis.\n\n"
                 f"FORMAT: Structured markdown for Confluence."
                 + _governance()
             )
@@ -416,7 +456,7 @@ class IndustryAgent(ResearchAgent):
         comp_names = [c.get("name", "") for c in competitors if c.get("name")]
 
         if cadence == "daily":
-            # Daily: 4 focused queries
+            # Daily: 4 focused queries + win/loss intelligence
             queries = [
                 f"{agency_focus} industry news UK 2026",
                 f"Campaign OR \"The Drum\" OR \"Marketing Week\" {agency_focus} news",
@@ -425,8 +465,9 @@ class IndustryAgent(ResearchAgent):
             if comp_names:
                 names_str = " OR ".join(f'"{n}"' for n in comp_names[:4])
                 queries.append(f"({names_str}) press coverage news 2026")
+                queries.append(f'({names_str}) "appointed" OR "wins" OR "new client" OR "selected as agency" 2026')
         else:
-            # Weekly: broader search
+            # Weekly: broader search + win/loss intelligence
             names_str = " OR ".join(f'"{n}"' for n in comp_names[:4]) if comp_names else ""
             queries = [
                 f"{agency_focus} industry news analysis UK 2026",
@@ -438,6 +479,8 @@ class IndustryAgent(ResearchAgent):
                 queries.extend([
                     f"({names_str}) press coverage spokesperson quoted",
                     f'"{agency_name}" agency press coverage 2026',
+                    f'({names_str}) "appointed" OR "wins" OR "new client" OR "selected as agency" 2026',
+                    f'({names_str}) "lost" OR "parts ways" OR "review" OR "pitch" agency account 2026',
                 ])
 
         search_fn = _gather_for_cadence(cadence)
@@ -553,6 +596,16 @@ class DIFFAgent(ResearchAgent):
                 f"{prior_diff[:_prior_limit(cadence)]}"
             )
 
+        # Build trend context if prior metrics are available
+        trend_data = context.get("competitor_trends", "")
+        trend_section = ""
+        if trend_data:
+            trend_section = (
+                f"\n\nWhen prior week metrics are provided, compare trends: Is this competitor "
+                f"publishing MORE or LESS? Have their topics shifted? Is their activity level "
+                f"changing? Flag any significant week-over-week changes.\n"
+            )
+
         if cadence == "weekly":
             system = (
                 f"You are a competitive positioning analyst for {agency_name} (Tomorrow Group).\n\n"
@@ -565,7 +618,8 @@ class DIFFAgent(ResearchAgent):
                 f"- Format shifts\n"
                 f"- Content format opportunities competitors aren't using (e.g. video, carousel, podcast, webinar)\n\n"
                 f"For each signal: What changed, which competitor, significance (HIGH/MED/LOW), "
-                f"recommended response.\n\n"
+                f"recommended response.\n"
+                f"{trend_section}\n"
                 f"Then add:\n"
                 f"## Content Calendar Recommendations\n"
                 f"- **Immediate (this week):** Quick-win content {agency_name} should publish now in response to competitor moves\n"
@@ -573,6 +627,14 @@ class DIFFAgent(ResearchAgent):
                 f"- **Strategic (this quarter):** Larger content initiatives to build authority in contested topics\n\n"
                 f"## Share-of-Voice Ranking\n"
                 f"Rank competitors by overall content presence with trend direction (up/down/stable).\n\n"
+                f"Also output a ```metrics_json``` block at the end with structured metrics for EACH competitor:\n"
+                f"```metrics_json\n"
+                f"[\n"
+                f'  {{"competitor_name": "...", "publishing_frequency": "3 posts/week", '
+                f'"primary_topics": ["topic1", "topic2"], "positioning_keywords": ["kw1", "kw2"], '
+                f'"format_mix": "60% text, 30% video, 10% carousel", "activity_level": "HIGH"}}\n'
+                f"]\n"
+                f"```\n\n"
                 f"FORMAT: Structured markdown for Slack + Confluence."
                 + _voice_context(agency)
                 + _governance()
@@ -594,9 +656,23 @@ class DIFFAgent(ResearchAgent):
                 + _governance()
             )
 
+        trend_context = ""
+        if trend_data:
+            trend_context = f"\n\nPRIOR WEEK COMPETITOR METRICS:\n{trend_data}"
+
         ctx_limit = _context_limit(cadence)
-        user = f"RESEARCH DATA:\n{combined[:ctx_limit]}{module_context}{prior_context}"
+        user = f"RESEARCH DATA:\n{combined[:ctx_limit]}{module_context}{prior_context}{trend_context}"
         return await self._call_claude(system, user, max_tokens=_max_tokens(cadence), context=context)
+
+    def parse_metrics_json(self, report: str) -> list[dict]:
+        """Extract the metrics_json block from a DIFF report for trend tracking."""
+        try:
+            start = report.index("```metrics_json") + len("```metrics_json")
+            end = report.index("```", start)
+            return json.loads(report[start:end].strip())
+        except (ValueError, json.JSONDecodeError) as e:
+            console.print(f"[yellow]  Metrics JSON parse failed: {e}[/yellow]")
+            return []
 
 
 # ---------------------------------------------------------------------------
@@ -1298,10 +1374,17 @@ class ContentCalendarAgent(ResearchAgent):
             f"A post with ONLY MEDIUM/LOW issues should PASS. A post expressing a genuine "
             f"opinion ('We believe X', 'Our position is Y') is NOT slop — that's voice. "
             f"Only fail posts with CRITICAL or HIGH issues.\n\n"
+            f"Also extract ALL specific claims in the draft as a checklist:\n"
+            f"- Any percentage or number\n"
+            f"- Any named company claim\n"
+            f"- Any \"we did/built/tested\" claim\n"
+            f"- Any time reference (\"8 years\", \"last quarter\")\n"
+            f"List each claim and mark it: [VERIFIED from data], [UNVERIFIABLE], or [FABRICATED]\n\n"
             f"OUTPUT: A JSON object:\n"
             f"```json\n"
             f'{{"pass": true/false, "issues": ["issue 1"], '
-            f'"severity": "CLEAN/LOW/MEDIUM/HIGH/CRITICAL"}}\n'
+            f'"severity": "CLEAN/LOW/MEDIUM/HIGH/CRITICAL", '
+            f'"claims": [{{"claim": "...", "verdict": "VERIFIED from data|UNVERIFIABLE|FABRICATED"}}]}}\n'
             f"```\n"
             f"pass=true if no CRITICAL or HIGH issues remain."
         )

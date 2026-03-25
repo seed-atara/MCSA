@@ -533,13 +533,18 @@ def _tool_search_reports(sb, params: dict) -> str:
         if search_text and search_text not in content.lower():
             continue
         # When searching, show context around the match; otherwise show more of the report
+        # When only 1 result matches (specific query), allow up to 4000 chars
+        single_result = len(rows.data or []) == 1 or (search_text and sum(
+            1 for r2 in (rows.data or []) if search_text in r2.get("content", "").lower()
+        ) == 1)
+        preview_limit = 4000 if single_result else 1500
         if search_text:
             idx = content.lower().index(search_text)
             start = max(0, idx - 300)
             end = min(len(content), idx + len(search_text) + 700)
             preview = ("..." if start > 0 else "") + content[start:end] + ("..." if end < len(content) else "")
         else:
-            preview = content[:1500] if len(content) > 1500 else content
+            preview = content[:preview_limit] if len(content) > preview_limit else content
         results.append(
             f"### {r['agency_name']} — {r['cadence']} {r['module']} ({r['created_at'][:10]})\n{preview}"
         )
@@ -1038,8 +1043,8 @@ def _process_command(
                     if block.type == "tool_use":
                         result = _execute_tool(block.name, block.input)
                         # Truncate tool results to reduce token usage
-                        if len(result) > 2000:
-                            result = result[:2000] + "\n\n[...truncated for brevity]"
+                        if len(result) > 3500:
+                            result = result[:3500] + "\n\n[...truncated for brevity]"
                         tool_results.append({
                             "type": "tool_result",
                             "tool_use_id": block.id,
@@ -1271,8 +1276,8 @@ def _process_event(text: str, user_id: str, channel_id: str, thread_ts: str | No
                 for block in response.content:
                     if block.type == "tool_use":
                         result = _execute_tool(block.name, block.input)
-                        if len(result) > 2000:
-                            result = result[:2000] + "\n\n[...truncated for brevity]"
+                        if len(result) > 3500:
+                            result = result[:3500] + "\n\n[...truncated for brevity]"
                         tool_results.append({
                             "type": "tool_result",
                             "tool_use_id": block.id,

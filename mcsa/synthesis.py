@@ -17,8 +17,9 @@ from datetime import datetime, timedelta
 import anthropic
 from rich.console import Console
 
-from .config import SLACK_MCSA_WEBHOOK_URL, SLACK_MCSA_ENABLED
+from .config import SLACK_MCSA_WEBHOOK_URL, SLACK_MCSA_ENABLED, AGENCIES
 from .formatter import _md_to_mrkdwn
+from .slack import deliver_to_slack
 from .storage import _get_supabase, _sb_insert
 
 console = Console()
@@ -246,6 +247,20 @@ def _chunk_text(text: str, max_len: int = 3000) -> list[str]:
     return chunks
 
 
+def _generate_agency_takeaway(agency_name: str, synthesis_text: str) -> str:
+    """Generate a short per-agency takeaway from the cross-agency synthesis."""
+    system = (
+        f"You are a strategic intelligence analyst for {agency_name} (part of Tomorrow Group). "
+        f"Be direct and actionable. No preamble."
+    )
+    user = (
+        f"Given this cross-agency synthesis, write 3 bullet points about what this means "
+        f"specifically for {agency_name}. Be direct and actionable.\n\n"
+        f"SYNTHESIS:\n{synthesis_text}"
+    )
+    return _call_claude(system, user)
+
+
 async def run_synthesis() -> str:
     """Generate and deliver a cross-agency synthesis. Returns the content."""
     console.print(f"\n[bold]{'=' * 60}[/bold]")
@@ -259,4 +274,20 @@ async def run_synthesis() -> str:
         return ""
 
     deliver_synthesis(content)
+
+    # Generate per-agency takeaways
+    console.print("[dim]Generating per-agency takeaways...[/dim]")
+    for agency in AGENCIES:
+        agency_name = agency["name"]
+        try:
+            agency_takeaway = _generate_agency_takeaway(agency_name, content)
+            if agency_takeaway:
+                header = f"*What This Means for {agency_name}*\n\n"
+                deliver_to_slack(agency_name, "synthesis", "weekly", header + agency_takeaway)
+                console.print(f"[green]  {agency_name}: takeaway delivered to Slack[/green]")
+            else:
+                console.print(f"[yellow]  {agency_name}: takeaway generation returned empty[/yellow]")
+        except Exception as e:
+            console.print(f"[yellow]  {agency_name}: takeaway failed — {e}[/yellow]")
+
     return content

@@ -179,17 +179,33 @@ class AlertDetector:
             removed_count = len(changes["removed_pages"])
             total_pages = len(current)
 
-            # Significant change threshold: >50% pages changed or 5+ new pages
+            # Significant change threshold: >80% pages changed (raised from 50%
+            # to reduce false positives when crawling only ~10 pages)
             change_ratio = (new_count + changed_count) / max(total_pages, 1)
 
-            if change_ratio > 0.5:
+            # Structural changes (pages added/removed) are HIGH severity
+            if new_count >= 5 or removed_count >= 5:
                 self.alerts.append({
                     "agency_name": agency_name,
                     "alert_type": "website_redesign",
                     "severity": SEVERITY_HIGH,
-                    "title": f"Major website change: {comp_name}",
+                    "title": f"Major structural website change: {comp_name}",
                     "detail": (
-                        f"{comp_name} website has changed significantly.\n"
+                        f"{comp_name} website structure changed significantly.\n"
+                        f"New pages: {new_count} | Changed: {changed_count} | "
+                        f"Removed: {removed_count} | Total: {total_pages}\n"
+                        f"Change ratio: {change_ratio:.0%}"
+                    ),
+                })
+            elif change_ratio > 0.8:
+                # Content-only changes at high ratio are LOW severity
+                self.alerts.append({
+                    "agency_name": agency_name,
+                    "alert_type": "website_content_change",
+                    "severity": SEVERITY_LOW,
+                    "title": f"Website content refresh: {comp_name}",
+                    "detail": (
+                        f"{comp_name} website content has been updated.\n"
                         f"New pages: {new_count} | Changed: {changed_count} | "
                         f"Removed: {removed_count} | Total: {total_pages}\n"
                         f"Change ratio: {change_ratio:.0%}"

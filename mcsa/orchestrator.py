@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 import json
 import time
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 from rich.console import Console
 from rich.panel import Panel
@@ -55,6 +55,9 @@ class MCSAOrchestrator:
         # Load persisted registries
         self.registries = storage.load_all_registries()
 
+        # Check for cross-registry duplicates
+        self._check_registry_overlap()
+
         # Agents (stateless, shared across agencies)
         self.registry_agent = RegistryAgent()
         self.linkedin_agent = LinkedInAgent()
@@ -66,6 +69,29 @@ class MCSAOrchestrator:
         self.key_people_agent = KeyPeopleAgent()
         self.content_calendar_agent = ContentCalendarAgent()
         self.social_follower_agent = SocialFollowerAgent()
+
+    def _check_registry_overlap(self) -> None:
+        """Log warnings when the same competitor appears in multiple agency registries."""
+        # Build mapping: competitor_name_lower -> list of agencies
+        comp_to_agencies: dict[str, list[str]] = {}
+        for agency_key, competitors in self.registries.items():
+            for comp in competitors:
+                name = comp.get("name", "").strip().lower()
+                if name:
+                    comp_to_agencies.setdefault(name, []).append(agency_key)
+
+        # Flag duplicates
+        duplicates_found = False
+        for comp_name, agencies in comp_to_agencies.items():
+            if len(agencies) > 1:
+                if not duplicates_found:
+                    console.print("[yellow]Cross-registry duplicate competitors detected:[/yellow]")
+                    duplicates_found = True
+                agency_list = ", ".join(agencies)
+                console.print(f"[yellow]  '{comp_name}' appears in: {agency_list}[/yellow]")
+
+        if not duplicates_found and self.registries:
+            console.print("[dim]Registry overlap check: no duplicates found[/dim]")
 
     def _report_progress(self, phase: int, total: int, description: str) -> None:
         if self.progress_callback:
@@ -162,6 +188,10 @@ class MCSAOrchestrator:
             storage.save_registry(agency_name, competitors)
             self.registries[storage._safe(agency_name)] = competitors
             console.print(f"[green]  Registry seeded with {len(competitors)} manual competitors[/green]")
+        elif competitors and manual_names:
+            # Ensure manual competitors are present in loaded registry for ALL cadences
+            competitors = _ensure_manual_competitors(competitors, manual_names)
+            self.registries[storage._safe(agency_name)] = competitors
 
         # ── Phase 1: Registry (monthly only) ─────────────────────────────
         if cadence == CADENCE_MONTHLY:
@@ -319,6 +349,14 @@ class MCSAOrchestrator:
         if cadence in (CADENCE_WEEKLY, CADENCE_MONTHLY):
             console.print(f"[dim]  Module 4: Competitive DIFF[/dim]")
             diff_prior = storage.load_latest_report(agency_name, "diff", cadence)
+
+            # Load prior competitor metrics for trend analysis
+            trend_data = ""
+            if cadence == CADENCE_WEEKLY:
+                all_trends = storage.load_competitor_trend(agency_name, weeks=4)
+                if all_trends:
+                    trend_data = json.dumps(all_trends, indent=2)
+
             diff_ctx = {
                 "competitors": competitors,
                 "cadence": cadence,
@@ -326,6 +364,7 @@ class MCSAOrchestrator:
                 "industry_report": reports.get("industry", ""),
                 "website_report": reports.get("website", ""),
                 "prior_report": diff_prior or "",
+                "competitor_trends": trend_data,
             }
             try:
                 diff_report = await self.diff_agent.research(agency, diff_ctx)
@@ -333,6 +372,17 @@ class MCSAOrchestrator:
                 path = storage.save_report(agency_name, "diff", cadence, diff_report)
                 _save_formatted(agency_name, "diff", cadence, diff_report, path)
                 console.print(f"[green]  DIFF: {len(diff_report)} chars -> {path.name}[/green]")
+
+                # Extract and save competitor metrics for longitudinal tracking
+                if cadence == CADENCE_WEEKLY:
+                    parsed_metrics = self.diff_agent.parse_metrics_json(diff_report)
+                    if parsed_metrics:
+                        for m in parsed_metrics:
+                            comp_name = m.pop("competitor_name", None)
+                            if comp_name:
+                                storage.save_competitor_metrics(agency_name, comp_name, m)
+                        console.print(f"[green]  Metrics: {len(parsed_metrics)} competitor metrics saved[/green]")
+
             except Exception as e:
                 console.print(f"[red]  DIFF failed: {e}[/red]")
                 reports["diff"] = f"[Error: {e}]"
@@ -500,6 +550,17 @@ def _save_formatted(agency_name: str, module: str, cadence: str, report: str, ra
     # Skip Slack/Confluence delivery for internal data modules (contain raw JSON)
     if module in _INTERNAL_MODULES:
         return
+
+    # Prepend a standardized header with the correct date (Python-generated,
+    # so even if Claude puts wrong dates in the body, the header is always right)
+    header = (
+        f"# {module.upper()} Intelligence — {agency_name}\n"
+        f"## {cadence.title()} Report — {date.today().strftime('%A %d %B %Y')}\n\n"
+    )
+    report = header + report
+
+    # Also update the raw report file with the header
+    raw_path.write_text(report, encoding="utf-8")
 
     # Slack version
     if cadence == CADENCE_DAILY:
