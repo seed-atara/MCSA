@@ -54,6 +54,11 @@ def _governance() -> str:
         f"Include a CONFIDENCE label (HIGH / MEDIUM / LOW) for each major claim.\n"
         f"If data is insufficient to make a claim, say so explicitly rather than speculating.\n"
         f"Every claim must cite a specific source, date, or data point — never invent evidence.\n"
+        f"OUTDATED TOPICS — ignore these, they are no longer relevant in 2026:\n"
+        f"- Voice search optimisation (superseded by AI/AEO)\n"
+        f"- Cookie deprecation timelines (resolved)\n"
+        f"- Basic chatbot implementations (superseded by agentic AI)\n"
+        f"Focus on what matters NOW. If research data contains stale topics, skip them.\n"
         f"--- END GOVERNANCE ---"
     )
 
