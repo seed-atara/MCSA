@@ -317,6 +317,7 @@ def _create_fix_plan(item: dict) -> dict | None:
             f"FIX TYPE: {item['fix_type']}\n"
             f"DESCRIPTION: {item['fix_description']}\n\n"
             f"{file_context}"
+            + (f"\n\n{item['_retry_context']}" if item.get("_retry_context") else "")
         )}],
     )
 
@@ -477,31 +478,55 @@ def main():
         print(f"\n  Processing: {item['summary']}")
         item["_msg_hash"] = _message_hash(msg_text, channel)
 
-        # Create plan
-        plan = _create_fix_plan(item)
-        if not plan:
-            print("    Could not create plan, skipping")
-            continue
+        # Plan → Verify → Retry loop (max 3 plan attempts)
+        MAX_PLAN_ATTEMPTS = 3
+        plan = None
+        all_approved = False
+        prior_failures = []
 
-        if plan.get("risk") == "HIGH":
-            print(f"    HIGH risk — moving to human review")
-            needs_review.append(item)
-            continue
+        for plan_attempt in range(1, MAX_PLAN_ATTEMPTS + 1):
+            # Generate plan (include prior failure feedback for retries)
+            if prior_failures:
+                item["_retry_context"] = (
+                    f"PREVIOUS ATTEMPT FAILED. Errors:\n"
+                    + "\n".join(f"- {f}" for f in prior_failures)
+                    + "\n\nGenerate a DIFFERENT plan that avoids these issues. "
+                    "Make sure old_text is EXACTLY copied from the file."
+                )
+            plan = _create_fix_plan(item)
+            if not plan:
+                print(f"    Plan attempt {plan_attempt}/{MAX_PLAN_ATTEMPTS}: could not create plan")
+                prior_failures.append("Failed to generate a plan")
+                continue
 
-        print(f"    Plan: {plan['action']}")
+            if plan.get("risk") == "HIGH":
+                print(f"    Plan attempt {plan_attempt}/{MAX_PLAN_ATTEMPTS}: HIGH risk")
+                prior_failures.append("Plan was HIGH risk")
+                continue
 
-        # Verify 3 times
-        all_approved = True
-        for round_num in range(1, 4):
-            verification = _verify_plan(plan, item, round_num)
-            if not verification.get("approved"):
-                print(f"    Verification {round_num}/3 FAILED: {verification.get('issues', [])}")
-                all_approved = False
+            print(f"    Plan attempt {plan_attempt}/{MAX_PLAN_ATTEMPTS}: {plan['action']}")
+
+            # Verify 3 times
+            all_approved = True
+            for round_num in range(1, 4):
+                verification = _verify_plan(plan, item, round_num)
+                if not verification.get("approved"):
+                    issues = verification.get("issues", [])
+                    print(f"    Verification {round_num}/3 FAILED: {issues}")
+                    all_approved = False
+                    prior_failures.extend(
+                        i if isinstance(i, str) else str(i) for i in issues
+                    )
+                    break
+                print(f"    Verification {round_num}/3 PASSED")
+
+            if all_approved:
                 break
-            print(f"    Verification {round_num}/3 PASSED")
+            else:
+                print(f"    Retrying with error feedback...")
 
-        if not all_approved:
-            print("    Failed verification — moving to human review")
+        if not all_approved or not plan:
+            print("    Exhausted plan attempts — moving to human review")
             needs_review.append(item)
             continue
 
