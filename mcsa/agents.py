@@ -45,10 +45,13 @@ def _valid_website(url: str) -> bool:
 
 def _governance() -> str:
     """Shared governance footer appended to every system prompt, with today's date."""
+    from .config import TG_VOICE
     today = date.today().strftime("%A %d %B %Y")  # e.g. "Wednesday 19 March 2026"
+    group_id = TG_VOICE.get("group_identity", "")
     return (
         f"\n\n--- GOVERNANCE ---\n"
         f"TODAY'S DATE: {today}. Use this date for all report headers and references.\n"
+        f"ABOUT TOMORROW GROUP: {group_id}\n"
         f"All data is from publicly accessible sources only. No authenticated access.\n"
         f"Output is classified Internal — not for client distribution without MD review.\n"
         f"Include a CONFIDENCE label (HIGH / MEDIUM / LOW) for each major claim.\n"
