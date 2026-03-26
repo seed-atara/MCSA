@@ -35,8 +35,8 @@ import requests
 BOT_TOKEN = os.getenv("SLACK_MCSA_BOT_TOKEN", "")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 DEV_USER_ID = "U09G7RVBLCQ"  # Johannes — gets notified of all auto-fixes
+DEV_CHANNEL = "C0AM5RA8GUQ"  # #mcsa-general — fallback for DMs
 CURSOR_FILE = Path(__file__).parent.parent / "output" / "mcsa" / "auto_improve_cursors.json"
-LOG_FILE = Path(__file__).parent.parent / "output" / "mcsa" / "auto_improve_log.jsonl"
 PROJECT_ROOT = Path(__file__).parent.parent
 
 MCSA_CHANNELS = {
@@ -51,6 +51,19 @@ SAFE_FILES = {
     "mcsa/config.py": ["anti_slop_rules", "competitor_guidance", "facts"],
     "mcsa/alerts.py": ["thresholds", "severity levels"],
 }
+
+# Supabase client for persistent logging + dedup
+_sb = None
+def _get_sb():
+    global _sb
+    if _sb is not None:
+        return _sb
+    sb_url = os.getenv("SUPABASE_URL")
+    sb_key = os.getenv("SUPABASE_SERVICE_KEY")
+    if sb_url and sb_key:
+        from supabase import create_client
+        _sb = create_client(sb_url, sb_key)
+    return _sb
 
 client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 
@@ -67,9 +80,40 @@ def _save_cursors(cursors: dict):
 
 
 def _log_action(action: dict):
-    LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
-    with open(LOG_FILE, "a", encoding="utf-8") as f:
-        f.write(json.dumps({**action, "timestamp": datetime.now().isoformat()}) + "\n")
+    """Log to Supabase auto_improve_log table (persistent across deploys)."""
+    sb = _get_sb()
+    if sb:
+        try:
+            sb.table("auto_improve_log").insert({
+                "action_type": action.get("type", "unknown"),
+                "summary": action.get("item", {}).get("summary", ""),
+                "channel": action.get("item", {}).get("channel", ""),
+                "user_name": action.get("item", {}).get("user_name", ""),
+                "plan": action.get("plan", {}),
+                "status": action.get("status", ""),
+                "message_hash": action.get("message_hash", ""),
+            }).execute()
+        except Exception as e:
+            print(f"  Log to Supabase failed: {e}")
+
+
+def _is_duplicate(message_text: str, channel: str) -> bool:
+    """Check if we've already processed this exact feedback."""
+    import hashlib
+    msg_hash = hashlib.md5(f"{channel}:{message_text}".encode()).hexdigest()
+    sb = _get_sb()
+    if not sb:
+        return False
+    try:
+        rows = sb.table("auto_improve_log").select("id").eq("message_hash", msg_hash).limit(1).execute()
+        return bool(rows.data)
+    except Exception:
+        return False
+
+
+def _message_hash(message_text: str, channel: str) -> str:
+    import hashlib
+    return hashlib.md5(f"{channel}:{message_text}".encode()).hexdigest()
 
 
 def _get_username(user_id: str) -> str:
@@ -95,15 +139,21 @@ def _post_slack(channel_id: str, text: str, thread_ts: str = None):
 
 
 def _dm_dev(text: str):
-    """DM Johannes about an auto-fix."""
-    # Open DM channel
-    resp = requests.post("https://slack.com/api/conversations.open",
-        headers={"Authorization": f"Bearer {BOT_TOKEN}", "Content-Type": "application/json"},
-        json={"users": DEV_USER_ID}, timeout=10)
-    data = resp.json()
-    if data.get("ok"):
-        dm_channel = data["channel"]["id"]
-        _post_slack(dm_channel, text)
+    """Notify Johannes about an auto-fix. Try DM first, fall back to #mcsa-general."""
+    # Try DM first
+    try:
+        resp = requests.post("https://slack.com/api/conversations.open",
+            headers={"Authorization": f"Bearer {BOT_TOKEN}", "Content-Type": "application/json"},
+            json={"users": DEV_USER_ID}, timeout=10)
+        data = resp.json()
+        if data.get("ok"):
+            dm_channel = data["channel"]["id"]
+            _post_slack(dm_channel, text)
+            return
+    except Exception:
+        pass
+    # Fall back to #mcsa-general with @mention
+    _post_slack(DEV_CHANNEL, f"<@{DEV_USER_ID}> {text}")
 
 
 def _fetch_new_messages() -> list[dict]:
@@ -416,7 +466,16 @@ def main():
 
     # Step 3: Process auto-fixable items
     for item in auto_fixable:
+        msg_text = item.get("message", "")
+        channel = item.get("channel", "")
+
+        # Dedup — skip if we've already processed this feedback
+        if _is_duplicate(msg_text, channel):
+            print(f"\n  SKIP (already processed): {item['summary']}")
+            continue
+
         print(f"\n  Processing: {item['summary']}")
+        item["_msg_hash"] = _message_hash(msg_text, channel)
 
         # Create plan
         plan = _create_fix_plan(item)
@@ -497,6 +556,7 @@ def main():
                     "item": item,
                     "plan": plan,
                     "status": "executed",
+                    "message_hash": item.get("_msg_hash", ""),
                 })
             else:
                 print("    Git push failed")
