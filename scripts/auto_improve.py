@@ -356,14 +356,22 @@ def _execute_fix(plan: dict) -> bool:
         return False
 
 
+def _is_railway() -> bool:
+    """Check if running on Railway (no git available)."""
+    return bool(os.getenv("RAILWAY_ENVIRONMENT") or os.getenv("RAILWAY_SERVICE_NAME"))
+
+
 def _commit_and_push(plan: dict, item: dict) -> bool:
-    """Commit and push the fix."""
+    """Commit and push the fix. On Railway, skip git and return True (fix is applied to running instance)."""
+    if _is_railway():
+        print("    Running on Railway — fix applied to running instance (no git commit)")
+        return True
     try:
         file_path = plan["file"]
         msg = (
             f"Auto-fix: {item['summary']}\n\n"
-            f"Triggered by {item['user']} in #{item['channel']}:\n"
-            f'"{item["message"][:200]}"\n\n'
+            f"Triggered by {item.get('user', '?')} in #{item.get('channel', '?')}:\n"
+            f'"{item.get("message", "")[:200]}"\n\n'
             f"Fix: {plan['action']}\n\n"
             f"Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>"
         )
@@ -465,14 +473,23 @@ def main():
                     _post_slack(ch_id, reply, thread_ts=msg_ts)
 
                 # DM Johannes
+                railway_note = ""
+                if _is_railway():
+                    railway_note = (
+                        "\n\n:warning: *Railway ephemeral fix* — applied to running instance only. "
+                        "To make permanent, apply the same change locally and push to git."
+                    )
                 _dm_dev(
                     f":gear: *MCSA Auto-Fix Applied*\n\n"
-                    f"*Triggered by:* {item['user_name']} in #{item['channel']}\n"
-                    f"*Feedback:* \"{item['message'][:200]}\"\n"
+                    f"*Triggered by:* {item.get('user_name', '?')} in #{item.get('channel', '?')}\n"
+                    f"*Feedback:* \"{item.get('message', '')[:200]}\"\n"
                     f"*Fix:* {plan['action']}\n"
                     f"*File:* `{plan['file']}`\n"
+                    f"*old_text:* `{plan.get('old_text', '')[:100]}...`\n"
+                    f"*new_text:* `{plan.get('new_text', '')[:100]}...`\n"
                     f"*Risk:* {plan.get('risk', '?')}\n"
                     f"*Verified:* 3/3 checks passed"
+                    f"{railway_note}"
                 )
 
                 _log_action({
