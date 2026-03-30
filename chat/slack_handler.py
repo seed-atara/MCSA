@@ -1004,68 +1004,15 @@ def _process_command(
         # Build messages: include last N history messages + new user message
         messages = []
         if history:
-            # Take the tail of the conversation to stay within token limits
             recent = history[-MAX_HISTORY_MESSAGES:]
             for m in recent:
                 messages.append({"role": m["role"], "content": m["content"]})
         messages.append({"role": "user", "content": text})
 
-        # Tool-use loop (max 5 rounds, same as web chat)
-        final_text = ""
-        for _ in range(5):
-            # Retry with backoff for rate limits (429)
-            response = None
-            for attempt in range(3):
-                try:
-                    response = claude_client.messages.create(
-                        model=MODEL,
-                        max_tokens=2048,  # Concise for Slack
-                        system=_build_system_prompt(channel_id),
-                        messages=messages,
-                        tools=TOOLS,
-                    )
-                    break
-                except anthropic.RateLimitError:
-                    if attempt < 2:
-                        import time as _time
-                        _time.sleep(5 * (attempt + 1))  # 5s, 10s backoff
-                    else:
-                        raise
-
-            if response is None:
-                break
-
-            has_tool_use = any(b.type == "tool_use" for b in response.content)
-
-            if has_tool_use:
-                tool_results = []
-                for block in response.content:
-                    if block.type == "tool_use":
-                        result = _execute_tool(block.name, block.input)
-                        # Truncate tool results to reduce token usage
-                        if len(result) > 3500:
-                            result = result[:3500] + "\n\n[...truncated for brevity]"
-                        tool_results.append({
-                            "type": "tool_result",
-                            "tool_use_id": block.id,
-                            "content": result,
-                        })
-                messages.append({"role": "assistant", "content": response.content})
-                messages.append({"role": "user", "content": tool_results})
-                continue
-
-            # Extract final text
-            for block in response.content:
-                if block.type == "text":
-                    final_text += block.text
-
-            # Append the final assistant message for storage
-            messages.append({"role": "assistant", "content": response.content})
-            break
+        final_text = _run_claude_loop(claude_client, messages, channel_id)
 
         # Save conversation (history + new user message + assistant reply)
-        # Merge old history with the new messages for persistence
-        full_history = list(history)  # prior messages
+        full_history = list(history)
         full_history.append({"role": "user", "content": text})
         if final_text:
             full_history.append({"role": "assistant", "content": final_text})
@@ -1149,12 +1096,15 @@ def _post_to_slack(url: str, payload: dict) -> None:
         print(f"[MCSA Slack] Failed to post response: {e}")
 
 
-def _post_chat_message(channel: str, text: str, thread_ts: str | None = None) -> None:
-    """Post a message to Slack via chat.postMessage (requires bot token)."""
+def _post_chat_message(channel: str, text: str, thread_ts: str | None = None) -> str | None:
+    """Post a message to Slack via chat.postMessage (requires bot token).
+
+    Returns the message 'ts' on success (useful for later deletion/updates), or None.
+    """
     bot_token = os.getenv("SLACK_MCSA_BOT_TOKEN")
     if not bot_token:
         print("[MCSA Slack] No SLACK_MCSA_BOT_TOKEN — cannot post via Events API")
-        return
+        return None
 
     payload: dict = {
         "channel": channel,
@@ -1206,12 +1156,101 @@ def _post_chat_message(channel: str, text: str, thread_ts: str | None = None) ->
             result = json.loads(resp.read())
             if not result.get("ok"):
                 print(f"[MCSA Slack] chat.postMessage error: {result.get('error')}")
+                return None
+            return result.get("ts")
     except Exception as e:
         print(f"[MCSA Slack] Failed to post chat message: {e}")
+        return None
 
 
-def _process_event(text: str, user_id: str, channel_id: str, thread_ts: str | None = None) -> None:
-    """Process an Events API message (mention or DM) — same as slash command but posts via bot token."""
+def _delete_chat_message(channel: str, message_ts: str) -> None:
+    """Delete a Slack message via chat.delete (requires bot token)."""
+    bot_token = os.getenv("SLACK_MCSA_BOT_TOKEN")
+    if not bot_token:
+        return
+    payload = {"channel": channel, "ts": message_ts}
+    data = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(
+        "https://slack.com/api/chat.delete",
+        data=data,
+        headers={
+            "Content-Type": "application/json; charset=utf-8",
+            "Authorization": f"Bearer {bot_token}",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=10):
+            pass
+    except Exception:
+        pass  # best-effort cleanup
+
+
+def _run_claude_loop(
+    claude_client,
+    messages: list,
+    channel_id: str,
+) -> str:
+    """Shared Claude tool-use loop for both slash commands and Events API.
+
+    Returns the final text response from Claude.
+    """
+    final_text = ""
+    for _ in range(5):
+        response = None
+        for attempt in range(3):
+            try:
+                response = claude_client.messages.create(
+                    model=MODEL,
+                    max_tokens=2048,
+                    system=_build_system_prompt(channel_id),
+                    messages=messages,
+                    tools=TOOLS,
+                )
+                break
+            except anthropic.RateLimitError:
+                if attempt < 2:
+                    import time as _time
+                    _time.sleep(5 * (attempt + 1))
+                else:
+                    raise
+
+        if response is None:
+            break
+
+        has_tool_use = any(b.type == "tool_use" for b in response.content)
+
+        if has_tool_use:
+            tool_results = []
+            for block in response.content:
+                if block.type == "tool_use":
+                    result = _execute_tool(block.name, block.input)
+                    if len(result) > 3500:
+                        result = result[:3500] + "\n\n[...truncated for brevity]"
+                    tool_results.append({
+                        "type": "tool_result",
+                        "tool_use_id": block.id,
+                        "content": result,
+                    })
+            messages.append({"role": "assistant", "content": response.content})
+            messages.append({"role": "user", "content": tool_results})
+            continue
+
+        for block in response.content:
+            if block.type == "text":
+                final_text += block.text
+        messages.append({"role": "assistant", "content": response.content})
+        break
+
+    return final_text
+
+
+def _process_event(
+    text: str, user_id: str, channel_id: str,
+    thread_ts: str | None = None,
+    thinking_ts: str | None = None,
+) -> None:
+    """Process an Events API message (mention or DM) — posts via bot token."""
     try:
         claude_client = _get_claude()
 
@@ -1245,53 +1284,7 @@ def _process_event(text: str, user_id: str, channel_id: str, thread_ts: str | No
                 messages.append({"role": m["role"], "content": m["content"]})
         messages.append({"role": "user", "content": text})
 
-        # Tool-use loop (same as _process_command)
-        final_text = ""
-        for _ in range(5):
-            response = None
-            for attempt in range(3):
-                try:
-                    response = claude_client.messages.create(
-                        model=MODEL,
-                        max_tokens=2048,
-                        system=_build_system_prompt(channel_id),
-                        messages=messages,
-                        tools=TOOLS,
-                    )
-                    break
-                except anthropic.RateLimitError:
-                    if attempt < 2:
-                        import time as _time
-                        _time.sleep(5 * (attempt + 1))
-                    else:
-                        raise
-
-            if response is None:
-                break
-
-            has_tool_use = any(b.type == "tool_use" for b in response.content)
-
-            if has_tool_use:
-                tool_results = []
-                for block in response.content:
-                    if block.type == "tool_use":
-                        result = _execute_tool(block.name, block.input)
-                        if len(result) > 3500:
-                            result = result[:3500] + "\n\n[...truncated for brevity]"
-                        tool_results.append({
-                            "type": "tool_result",
-                            "tool_use_id": block.id,
-                            "content": result,
-                        })
-                messages.append({"role": "assistant", "content": response.content})
-                messages.append({"role": "user", "content": tool_results})
-                continue
-
-            for block in response.content:
-                if block.type == "text":
-                    final_text += block.text
-            messages.append({"role": "assistant", "content": response.content})
-            break
+        final_text = _run_claude_loop(claude_client, messages, channel_id)
 
         # Save conversation
         full_history = list(history)
@@ -1300,18 +1293,27 @@ def _process_event(text: str, user_id: str, channel_id: str, thread_ts: str | No
             full_history.append({"role": "assistant", "content": final_text})
         _save_conversation(user_id, user_name, channel_id, full_history, conv_id)
 
+        # Delete the "Analysing..." thinking message before posting the real response
+        if thinking_ts:
+            _delete_chat_message(channel_id, thinking_ts)
+
         # Post response via bot token
         _post_chat_message(channel_id, final_text, thread_ts=thread_ts)
 
     except anthropic.RateLimitError:
+        if thinking_ts:
+            _delete_chat_message(channel_id, thinking_ts)
         _post_chat_message(channel_id, ":hourglass: MCSA is temporarily rate-limited. Please try again in 30 seconds.", thread_ts=thread_ts)
     except Exception as e:
         print(f"[MCSA Slack Events] Error: {e}")
+        if thinking_ts:
+            _delete_chat_message(channel_id, thinking_ts)
         _post_chat_message(channel_id, ":warning: MCSA encountered an issue processing your request.", thread_ts=thread_ts)
 
 
-# Event dedup — prevent processing the same event twice
-_processed_events: set[str] = set()
+# Event dedup — prevent processing the same event twice (ordered for FIFO eviction)
+from collections import OrderedDict
+_processed_events: OrderedDict[str, None] = OrderedDict()
 _MAX_EVENT_CACHE = 500
 
 
@@ -1447,13 +1449,12 @@ async def slack_events(request: Request):
         event_type = event.get("type", "")
         event_id = payload.get("event_id", "")
 
-        # Deduplicate (Slack retries events)
+        # Deduplicate (Slack retries events) — FIFO eviction keeps recent IDs
         if event_id in _processed_events:
             return {"ok": True}
-        _processed_events.add(event_id)
-        # Keep cache bounded
-        if len(_processed_events) > _MAX_EVENT_CACHE:
-            _processed_events.clear()
+        _processed_events[event_id] = None
+        while len(_processed_events) > _MAX_EVENT_CACHE:
+            _processed_events.popitem(last=False)
 
         # Ignore bot messages (prevent loops)
         if event.get("bot_id") or event.get("subtype") == "bot_message":
@@ -1479,13 +1480,13 @@ async def slack_events(request: Request):
         if not text or not user_id:
             return {"ok": True}
 
-        # Send a typing indicator
-        _post_chat_message(channel_id, f":hourglass_flowing_sand: _Analysing: {text}_", thread_ts=thread_ts)
+        # Send a typing indicator (capture ts so we can delete it later)
+        thinking_ts = _post_chat_message(channel_id, f":hourglass_flowing_sand: _Analysing: {text}_", thread_ts=thread_ts)
 
-        # Process in background
+        # Process in background — pass thinking_ts for cleanup
         thread = threading.Thread(
             target=_process_event,
-            args=(text, user_id, channel_id, thread_ts),
+            args=(text, user_id, channel_id, thread_ts, thinking_ts),
             daemon=True,
         )
         thread.start()
