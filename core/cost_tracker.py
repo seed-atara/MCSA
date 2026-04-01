@@ -1,7 +1,7 @@
 """
 Per-run API cost tracking.
 
-Tracks usage across Claude (Anthropic), Tavily, and Firecrawl APIs and
+Tracks usage across Claude (Anthropic) and Firecrawl APIs and
 estimates dollar costs based on published pricing.
 
 Usage:
@@ -9,12 +9,10 @@ Usage:
 
     cost_tracker.reset()
     cost_tracker.log_claude(input_tokens, output_tokens)
-    cost_tracker.log_tavily_search()
-    cost_tracker.log_tavily_extract(url_count)
-    cost_tracker.log_tavily_research(model)
-    cost_tracker.log_tavily_crawl(pages, extract_depth, has_instructions)
-    cost_tracker.log_tavily_map(pages, has_instructions)
     cost_tracker.log_firecrawl()
+    cost_tracker.log_firecrawl_search()
+    cost_tracker.log_firecrawl_map(pages)
+    cost_tracker.log_firecrawl_crawl(pages)
     summary = cost_tracker.summary()
 """
 
@@ -29,15 +27,11 @@ from dataclasses import dataclass, field
 CLAUDE_INPUT_COST_PER_TOKEN = 3.00 / 1_000_000      # $3.00 per 1M input tokens
 CLAUDE_OUTPUT_COST_PER_TOKEN = 15.00 / 1_000_000     # $15.00 per 1M output tokens
 
-# Tavily — pay-as-you-go rate: $0.008 per API credit
-TAVILY_CREDIT_COST = 0.008
-TAVILY_SEARCH_CREDITS = 1            # basic search = 1 credit
-TAVILY_EXTRACT_CREDITS_PER_5 = 2     # advanced extract = 2 credits per 5 URLs
-TAVILY_RESEARCH_PRO_CREDITS = 50     # estimated average (range 15-250)
-TAVILY_RESEARCH_MINI_CREDITS = 15    # estimated average (range 4-110)
-
-# Firecrawl — Standard plan ~$0.00083/credit, 1 credit per page
-FIRECRAWL_COST_PER_SCRAPE = 0.002    # conservative estimate per scrape
+# Firecrawl — Standard plan pricing
+FIRECRAWL_COST_PER_SCRAPE = 0.002     # ~$0.002 per scrape/page
+FIRECRAWL_COST_PER_SEARCH = 0.004     # ~$0.004 per search (scrapes results)
+FIRECRAWL_COST_PER_MAP = 0.001        # ~$0.001 per map call
+FIRECRAWL_COST_PER_CRAWL_PAGE = 0.002 # ~$0.002 per crawled page
 
 
 @dataclass
@@ -49,7 +43,15 @@ class _RunCosts:
     claude_input_tokens: int = 0
     claude_output_tokens: int = 0
 
-    # Tavily
+    # Firecrawl
+    firecrawl_calls: int = 0
+    firecrawl_search_calls: int = 0
+    firecrawl_map_calls: int = 0
+    firecrawl_map_pages: int = 0
+    firecrawl_crawl_calls: int = 0
+    firecrawl_crawl_pages: int = 0
+
+    # Legacy Tavily counters (kept so callers that haven't been updated don't crash)
     tavily_search_calls: int = 0
     tavily_extract_calls: int = 0
     tavily_extract_urls: int = 0
@@ -60,9 +62,6 @@ class _RunCosts:
     tavily_crawl_pages: int = 0
     tavily_map_calls: int = 0
     tavily_map_pages: int = 0
-
-    # Firecrawl
-    firecrawl_calls: int = 0
 
     # Per-call detail log (optional, for debugging)
     _detail_log: list = field(default_factory=list)
@@ -80,30 +79,37 @@ class _RunCosts:
             "output_tokens": output_tokens,
         })
 
-    def log_tavily_search(self):
-        self.tavily_search_calls += 1
-
-    def log_tavily_extract(self, url_count: int = 1):
-        self.tavily_extract_calls += 1
-        self.tavily_extract_urls += url_count
-
-    def log_tavily_research(self, model: str = "pro"):
-        self.tavily_research_calls += 1
-        if model == "pro":
-            self.tavily_research_pro_calls += 1
-        else:
-            self.tavily_research_mini_calls += 1
-
-    def log_tavily_crawl(self, pages: int = 1, extract_depth: str = "basic", has_instructions: bool = False):
-        self.tavily_crawl_calls += 1
-        self.tavily_crawl_pages += pages
-
-    def log_tavily_map(self, pages: int = 1, has_instructions: bool = False):
-        self.tavily_map_calls += 1
-        self.tavily_map_pages += pages
-
     def log_firecrawl(self):
         self.firecrawl_calls += 1
+
+    def log_firecrawl_search(self):
+        self.firecrawl_search_calls += 1
+
+    def log_firecrawl_map(self, pages: int = 1):
+        self.firecrawl_map_calls += 1
+        self.firecrawl_map_pages += pages
+
+    def log_firecrawl_crawl(self, pages: int = 1):
+        self.firecrawl_crawl_calls += 1
+        self.firecrawl_crawl_pages += pages
+
+    # Legacy Tavily stubs — redirect to Firecrawl counters
+    def log_tavily_search(self):
+        self.firecrawl_search_calls += 1
+
+    def log_tavily_extract(self, url_count: int = 1):
+        self.firecrawl_calls += url_count
+
+    def log_tavily_research(self, model: str = "pro"):
+        self.firecrawl_search_calls += 1
+
+    def log_tavily_crawl(self, pages: int = 1, extract_depth: str = "basic", has_instructions: bool = False):
+        self.firecrawl_crawl_calls += 1
+        self.firecrawl_crawl_pages += pages
+
+    def log_tavily_map(self, pages: int = 1, has_instructions: bool = False):
+        self.firecrawl_map_calls += 1
+        self.firecrawl_map_pages += pages
 
     # ---- Cost calculation ----
 
@@ -115,32 +121,21 @@ class _RunCosts:
         )
 
     @property
-    def tavily_cost(self) -> float:
-        search_credits = self.tavily_search_calls * TAVILY_SEARCH_CREDITS
-        extract_credits = 0
-        if self.tavily_extract_urls > 0:
-            batches = -(-self.tavily_extract_urls // 5)  # ceiling division
-            extract_credits = batches * TAVILY_EXTRACT_CREDITS_PER_5
-        research_credits = (
-            self.tavily_research_pro_calls * TAVILY_RESEARCH_PRO_CREDITS
-            + self.tavily_research_mini_calls * TAVILY_RESEARCH_MINI_CREDITS
-        )
-        crawl_extract_credits = 0
-        if self.tavily_crawl_pages > 0:
-            crawl_extract_credits = -(-self.tavily_crawl_pages // 5)
-        crawl_map_credits = 0
-        if self.tavily_map_pages > 0:
-            crawl_map_credits = -(-self.tavily_map_pages // 10)
-        return (search_credits + extract_credits + research_credits
-                + crawl_extract_credits + crawl_map_credits) * TAVILY_CREDIT_COST
+    def firecrawl_cost(self) -> float:
+        scrape_cost = self.firecrawl_calls * FIRECRAWL_COST_PER_SCRAPE
+        search_cost = self.firecrawl_search_calls * FIRECRAWL_COST_PER_SEARCH
+        map_cost = self.firecrawl_map_calls * FIRECRAWL_COST_PER_MAP
+        crawl_cost = self.firecrawl_crawl_pages * FIRECRAWL_COST_PER_CRAWL_PAGE
+        return scrape_cost + search_cost + map_cost + crawl_cost
 
     @property
-    def firecrawl_cost(self) -> float:
-        return self.firecrawl_calls * FIRECRAWL_COST_PER_SCRAPE
+    def tavily_cost(self) -> float:
+        """Legacy — always returns 0, costs now tracked under firecrawl."""
+        return 0.0
 
     @property
     def total_cost(self) -> float:
-        return self.claude_cost + self.tavily_cost + self.firecrawl_cost
+        return self.claude_cost + self.firecrawl_cost
 
     # ---- Summary ----
 
@@ -155,21 +150,13 @@ class _RunCosts:
                 "total_tokens": self.claude_input_tokens + self.claude_output_tokens,
                 "cost_usd": round(self.claude_cost, 4),
             },
-            "tavily": {
-                "search_calls": self.tavily_search_calls,
-                "extract_calls": self.tavily_extract_calls,
-                "extract_urls": self.tavily_extract_urls,
-                "research_calls": self.tavily_research_calls,
-                "research_pro_calls": self.tavily_research_pro_calls,
-                "research_mini_calls": self.tavily_research_mini_calls,
-                "crawl_calls": self.tavily_crawl_calls,
-                "crawl_pages": self.tavily_crawl_pages,
-                "map_calls": self.tavily_map_calls,
-                "map_pages": self.tavily_map_pages,
-                "cost_usd": round(self.tavily_cost, 4),
-            },
             "firecrawl": {
-                "calls": self.firecrawl_calls,
+                "scrape_calls": self.firecrawl_calls,
+                "search_calls": self.firecrawl_search_calls,
+                "map_calls": self.firecrawl_map_calls,
+                "map_pages": self.firecrawl_map_pages,
+                "crawl_calls": self.firecrawl_crawl_calls,
+                "crawl_pages": self.firecrawl_crawl_pages,
                 "cost_usd": round(self.firecrawl_cost, 4),
             },
         }
@@ -179,6 +166,12 @@ class _RunCosts:
         self.claude_calls = 0
         self.claude_input_tokens = 0
         self.claude_output_tokens = 0
+        self.firecrawl_calls = 0
+        self.firecrawl_search_calls = 0
+        self.firecrawl_map_calls = 0
+        self.firecrawl_map_pages = 0
+        self.firecrawl_crawl_calls = 0
+        self.firecrawl_crawl_pages = 0
         self.tavily_search_calls = 0
         self.tavily_extract_calls = 0
         self.tavily_extract_urls = 0
@@ -189,7 +182,6 @@ class _RunCosts:
         self.tavily_crawl_pages = 0
         self.tavily_map_calls = 0
         self.tavily_map_pages = 0
-        self.firecrawl_calls = 0
         self._detail_log = []
 
 

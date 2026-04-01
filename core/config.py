@@ -18,8 +18,9 @@ load_dotenv(_env_path)
 # API Keys
 # ---------------------------------------------------------------------------
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
-TAVILY_API_KEY = os.getenv("TAVILY_API_KEY")
 FIRECRAWL_API_KEY = os.getenv("FIRECRAWL_API_KEY")
+# Legacy — kept for backward compat but no longer used
+TAVILY_API_KEY = os.getenv("TAVILY_API_KEY")
 
 # Supabase (persistent storage for Railway)
 SUPABASE_URL = os.getenv("SUPABASE_URL")
@@ -54,7 +55,8 @@ RESEARCH_PROFILES = {
         "max_tokens": 8192,
         "search_results_per_query": 3,
         "deep_scrape_count": 2,
-        "tavily_research_model": "mini",
+        "research_model": "mini",
+        "tavily_research_model": "mini",  # legacy alias
         "kol_count": 25,
         "description": "Standard research - good for initial assessment",
     },
@@ -62,7 +64,8 @@ RESEARCH_PROFILES = {
         "max_tokens": 16384,
         "search_results_per_query": 5,
         "deep_scrape_count": 3,
-        "tavily_research_model": "pro",
+        "research_model": "pro",
+        "tavily_research_model": "pro",  # legacy alias
         "kol_count": 50,
         "description": "Deep research - comprehensive PhD-grade analysis",
     },
@@ -70,7 +73,8 @@ RESEARCH_PROFILES = {
         "max_tokens": 16384,
         "search_results_per_query": 8,
         "deep_scrape_count": 4,
-        "tavily_research_model": "pro",
+        "research_model": "pro",
+        "tavily_research_model": "pro",  # legacy alias
         "kol_count": 75,
         "description": "Exhaustive research - maximum depth for high-value clients",
     },
@@ -102,8 +106,8 @@ def validate_config():
     missing = []
     if not ANTHROPIC_API_KEY:
         missing.append("ANTHROPIC_API_KEY")
-    if not TAVILY_API_KEY:
-        missing.append("TAVILY_API_KEY")
+    if not FIRECRAWL_API_KEY:
+        missing.append("FIRECRAWL_API_KEY")
 
     if missing:
         raise ValueError(

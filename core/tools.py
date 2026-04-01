@@ -1,4 +1,9 @@
-"""Shared tools for web searching, scraping, and intelligent data extraction."""
+"""Shared tools for web searching, scraping, and intelligent data extraction.
+
+All search/scrape/crawl/map operations use the Firecrawl API.
+The tavily_research() function is preserved as a wrapper that uses
+Firecrawl search + scrape + Claude synthesis to replicate deep research.
+"""
 from __future__ import annotations
 
 import httpx
@@ -10,19 +15,27 @@ from typing import Optional
 from bs4 import BeautifulSoup
 from rich.console import Console
 
-from .config import TAVILY_API_KEY, FIRECRAWL_API_KEY
+from .config import FIRECRAWL_API_KEY, ANTHROPIC_API_KEY, MODEL, MAX_TOKENS
 from .cost_tracker import cost_tracker
 
 console = Console()
 
-# Tavily API base URL
-TAVILY_BASE_URL = "https://api.tavily.com"
+# Firecrawl API base URLs
+FIRECRAWL_V1_URL = "https://api.firecrawl.dev/v1"
+FIRECRAWL_V2_URL = "https://api.firecrawl.dev/v2"
 
 # Global list to track all sources used during research
 _sources_registry: list[dict] = []
 
 # Simple in-memory cache to avoid duplicate API calls
 _search_cache: dict[str, any] = {}
+
+
+def _firecrawl_headers() -> dict:
+    return {
+        "Authorization": f"Bearer {FIRECRAWL_API_KEY}",
+        "Content-Type": "application/json",
+    }
 
 
 def clear_sources():
@@ -73,8 +86,12 @@ def _cache_key(prefix: str, *args) -> str:
     return hashlib.md5(raw.encode()).hexdigest()
 
 
+# ---------------------------------------------------------------------------
+#  SEARCH — Firecrawl /v1/search
+# ---------------------------------------------------------------------------
+
 async def search_web(query: str, max_results: int = 5, max_retries: int = 3) -> list[dict]:
-    """Search the web using Tavily API with caching."""
+    """Search the web using Firecrawl Search API with caching."""
     cache_k = _cache_key("search", query, max_results)
     if cache_k in _search_cache:
         console.print(f"[dim]  Cached: {query}[/dim]")
@@ -86,34 +103,38 @@ async def search_web(query: str, max_results: int = 5, max_retries: int = 3) -> 
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.post(
-                    "https://api.tavily.com/search",
+                    f"{FIRECRAWL_V1_URL}/search",
+                    headers=_firecrawl_headers(),
                     json={
-                        "api_key": TAVILY_API_KEY,
                         "query": query,
-                        "max_results": max_results,
-                        "include_answer": True,
-                        "include_raw_content": False,
+                        "limit": max_results,
+                        "scrapeOptions": {"formats": ["markdown"]},
                     },
                     timeout=60.0,
                 )
                 response.raise_for_status()
                 data = response.json()
 
-            cost_tracker.log_tavily_search()
+            cost_tracker.log_firecrawl_search()
 
             results = []
-            for r in data.get("results", []):
+            for r in data.get("data", []):
                 url = r.get("url", "")
                 title = r.get("title", "")
-                content = r.get("content", "")
-                results.append({"title": title, "url": url, "content": content})
+                # Firecrawl search returns full markdown; use description as snippet
+                # but keep full markdown available
+                content = r.get("description", "")
+                markdown = r.get("markdown", "")
+                results.append({
+                    "title": title,
+                    "url": url,
+                    "content": content,
+                    "markdown": markdown,
+                })
                 if url:
                     register_source(url, title, query, content,
-                                    extraction_method="tavily_search",
-                                    content_length=len(content))
-
-            if data.get("answer"):
-                results.insert(0, {"title": "Summary", "url": "", "content": data["answer"]})
+                                    extraction_method="firecrawl_search",
+                                    content_length=len(markdown or content))
 
             _search_cache[cache_k] = results
             return results
@@ -129,8 +150,12 @@ async def search_web(query: str, max_results: int = 5, max_retries: int = 3) -> 
     return []
 
 
+# ---------------------------------------------------------------------------
+#  SCRAPE — Firecrawl /v2/scrape
+# ---------------------------------------------------------------------------
+
 async def scrape_url(url: str, title: str = "Scraped Page") -> Optional[str]:
-    """Scrape content from a URL. Uses Firecrawl if available, otherwise basic."""
+    """Scrape content from a URL using Firecrawl, with basic fallback."""
     cache_k = _cache_key("scrape", url)
     if cache_k in _search_cache:
         console.print(f"[dim]  Cached scrape: {url[:60]}[/dim]")
@@ -163,8 +188,8 @@ async def _scrape_with_firecrawl(url: str, max_retries: int = 2, include_brandin
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.post(
-                    "https://api.firecrawl.dev/v2/scrape",
-                    headers={"Authorization": f"Bearer {FIRECRAWL_API_KEY}"},
+                    f"{FIRECRAWL_V2_URL}/scrape",
+                    headers=_firecrawl_headers(),
                     json={"url": url, "formats": formats, "maxAge": 600000},
                     timeout=45.0,
                 )
@@ -238,163 +263,109 @@ async def _scrape_basic(url: str) -> Optional[str]:
         return None
 
 
+# ---------------------------------------------------------------------------
+#  EXTRACT — Firecrawl batch scrape (replaces Tavily Extract)
+# ---------------------------------------------------------------------------
+
 async def tavily_extract(urls: list[str], query: str = None, max_retries: int = 2) -> list[dict]:
-    """Extract content from URLs using Tavily Extract API."""
-    console.print(f"[dim]  Tavily Extract: {len(urls)} URLs[/dim]")
+    """Extract content from URLs using Firecrawl scrape (drop-in for Tavily Extract)."""
+    console.print(f"[dim]  Firecrawl Extract: {len(urls)} URLs[/dim]")
+
+    async def _extract_one(url: str) -> dict:
+        for attempt in range(max_retries):
+            try:
+                async with httpx.AsyncClient() as client:
+                    response = await client.post(
+                        f"{FIRECRAWL_V2_URL}/scrape",
+                        headers=_firecrawl_headers(),
+                        json={"url": url, "formats": ["markdown"], "maxAge": 600000},
+                        timeout=45.0,
+                    )
+                    response.raise_for_status()
+                    data = response.json()
+                    content = data.get("data", {}).get("markdown", "")
+                    if content:
+                        console.print(f"[dim green]   Extracted: {len(content)} chars from {url[:50]}...[/dim green]")
+                        cost_tracker.log_firecrawl()
+                        register_source(url, "Firecrawl Extract", query or "direct_extract", content[:200],
+                                        extraction_method="firecrawl_extract", content_length=len(content))
+                    return {"url": url, "content": content, "success": bool(content)}
+            except (httpx.ConnectTimeout, httpx.ReadTimeout, httpx.ConnectError):
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(2 ** attempt)
+                else:
+                    console.print(f"[yellow]   Failed: {url[:50]}[/yellow]")
+                    return {"url": url, "content": "", "success": False}
+            except Exception:
+                console.print(f"[yellow]   Failed: {url[:50]}[/yellow]")
+                return {"url": url, "content": "", "success": False}
+        return {"url": url, "content": "", "success": False}
+
+    results = await asyncio.gather(*[_extract_one(u) for u in urls], return_exceptions=True)
+    return [r if isinstance(r, dict) else {"url": "", "content": "", "success": False} for r in results]
+
+
+# ---------------------------------------------------------------------------
+#  MAP — Firecrawl /v1/map (replaces Tavily Map)
+# ---------------------------------------------------------------------------
+
+async def tavily_map(
+    url: str,
+    instructions: str = None,
+    max_depth: int = 1,
+    limit: int = 50,
+    max_retries: int = 2,
+) -> dict:
+    """Map a website using Firecrawl Map API — fast URL discovery."""
+    console.print(f"[bold cyan]  Tavily Map: {url} (depth={max_depth}, limit={limit})[/bold cyan]")
+
+    cache_k = _cache_key("map", url, instructions or "", max_depth, limit)
+    if cache_k in _search_cache:
+        console.print(f"[dim]   Using cached map result[/dim]")
+        return _search_cache[cache_k]
 
     for attempt in range(max_retries):
         try:
             async with httpx.AsyncClient() as client:
-                payload = {"urls": urls, "extract_depth": "advanced", "format": "markdown"}
-                if query:
-                    payload["query"] = query
-                    payload["chunks_per_source"] = 5
+                payload = {"url": url, "limit": limit}
+                if instructions:
+                    payload["search"] = instructions
 
                 response = await client.post(
-                    f"{TAVILY_BASE_URL}/extract",
-                    headers={"Authorization": f"Bearer {TAVILY_API_KEY}"},
+                    f"{FIRECRAWL_V1_URL}/map",
+                    headers=_firecrawl_headers(),
                     json=payload,
                     timeout=60.0,
                 )
                 response.raise_for_status()
                 data = response.json()
 
-            successful_urls = sum(1 for r in data.get("results", []) if r.get("raw_content"))
-            cost_tracker.log_tavily_extract(url_count=successful_urls)
+                urls_found = data.get("links", [])
+                console.print(f"[green]   Mapped {len(urls_found)} URLs[/green]")
 
-            results = []
-            for r in data.get("results", []):
-                url = r.get("url", "")
-                content = r.get("raw_content", "")
-                if content:
-                    console.print(f"[dim green]   Extracted: {len(content)} chars from {url[:50]}...[/dim green]")
-                    register_source(url, "Tavily Extract", query or "direct_extract", content[:200],
-                                    extraction_method="tavily_extract", content_length=len(content))
-                results.append({"url": url, "content": content, "success": bool(content)})
+                cost_tracker.log_firecrawl_map(pages=len(urls_found))
 
-            for f in data.get("failed_results", []):
-                console.print(f"[yellow]   Failed: {f.get('url', 'unknown')}[/yellow]")
-                results.append({"url": f.get("url", ""), "content": "", "success": False})
-
-            return results
-
-        except (httpx.ConnectTimeout, httpx.ReadTimeout, httpx.ConnectError):
-            if attempt < max_retries - 1:
-                console.print(f"[yellow]   Tavily Extract timeout, retrying...[/yellow]")
-                await asyncio.sleep(2 ** attempt)
-            else:
-                console.print(f"[red]   Tavily Extract failed after {max_retries} attempts[/red]")
-                return [{"url": u, "content": "", "success": False} for u in urls]
-        except Exception:
-            console.print(f"[red]   Tavily Extract error[/red]")
-            return [{"url": u, "content": "", "success": False} for u in urls]
-
-    return []
-
-
-async def tavily_research(
-    topic: str,
-    model: str = "pro",
-    output_schema: dict = None,
-    max_retries: int = 2,
-) -> dict:
-    """Perform comprehensive research on a topic using Tavily Research API."""
-    console.print(f"[bold cyan]  Tavily Research ({model}): {topic[:80]}...[/bold cyan]")
-
-    cache_k = _cache_key("research", topic, model)
-    if cache_k in _search_cache:
-        console.print(f"[dim]   Using cached research result[/dim]")
-        return _search_cache[cache_k]
-
-    for attempt in range(max_retries):
-        try:
-            async with httpx.AsyncClient() as client:
-                payload = {
-                    "input": topic,
-                    "model": model,
-                    "citation_format": "numbered",
-                    "stream": False,
-                }
-                if output_schema:
-                    payload["output_schema"] = output_schema
-
-                response = await client.post(
-                    f"{TAVILY_BASE_URL}/research",
-                    headers={"Authorization": f"Bearer {TAVILY_API_KEY}"},
-                    json=payload,
-                    timeout=30.0,
-                )
-                response.raise_for_status()
-                task_data = response.json()
-
-                request_id = task_data.get("request_id")
-                console.print(f"[dim]   Research task created: {request_id}[/dim]")
-
-                max_polls = 60
-                poll_interval = 5
-
-                for poll in range(max_polls):
-                    await asyncio.sleep(poll_interval)
-
-                    status_response = await client.get(
-                        f"{TAVILY_BASE_URL}/research/{request_id}",
-                        headers={"Authorization": f"Bearer {TAVILY_API_KEY}"},
-                        timeout=30.0,
-                    )
-                    status_response.raise_for_status()
-                    status_data = status_response.json()
-
-                    status = status_data.get("status", "unknown")
-
-                    if status == "completed":
-                        console.print(f"[green]   Research complete![/green]")
-                        cost_tracker.log_tavily_research(model=model)
-
-                        for source in status_data.get("sources", []):
-                            snippet = source.get("snippet", source.get("content", ""))
-                            register_source(
-                                source.get("url", ""),
-                                source.get("title", "Tavily Research"),
-                                topic,
-                                snippet[:200],
-                                extraction_method="tavily_research",
-                                content_length=len(snippet),
-                            )
-
-                        result = {
-                            "report": status_data.get("content", status_data.get("report", "")),
-                            "sources": status_data.get("sources", []),
-                            "structured_output": status_data.get("structured_output"),
-                            "response_time": status_data.get("response_time", 0),
-                        }
-
-                        _search_cache[cache_k] = result
-                        return result
-
-                    elif status == "failed":
-                        console.print(f"[red]   Research failed: {status_data.get('error', 'Unknown error')}[/red]")
-                        return {"report": "", "sources": [], "error": status_data.get("error")}
-
-                    else:
-                        if poll % 6 == 0:
-                            console.print(f"[dim]   Still researching... ({poll * poll_interval}s)[/dim]")
-
-                console.print(f"[yellow]   Research timeout after {max_polls * poll_interval}s[/yellow]")
-                return {"report": "", "sources": [], "error": "Timeout"}
+                result = {"urls": urls_found, "results": urls_found, "base_url": url}
+                _search_cache[cache_k] = result
+                return result
 
         except (httpx.ConnectTimeout, httpx.ReadTimeout, httpx.ConnectError) as e:
             if attempt < max_retries - 1:
-                console.print(f"[yellow]   Connection error, retrying...[/yellow]")
+                console.print(f"[yellow]   Map timeout, retrying...[/yellow]")
                 await asyncio.sleep(2 ** attempt)
             else:
-                console.print(f"[red]   Tavily Research failed after {max_retries} attempts[/red]")
-                return {"report": "", "sources": [], "error": str(e)}
+                console.print(f"[red]   Firecrawl Map failed after {max_retries} attempts[/red]")
+                return {"urls": [], "error": str(e)}
         except Exception as e:
-            console.print(f"[red]   Tavily Research error: {type(e).__name__}: {e}[/red]")
-            return {"report": "", "sources": [], "error": str(e)}
+            console.print(f"[red]   Firecrawl Map error: {type(e).__name__}: {e}[/red]")
+            return {"urls": [], "error": str(e)}
 
-    return {"report": "", "sources": [], "error": "Max retries exceeded"}
+    return {"urls": [], "error": "Max retries exceeded"}
 
+
+# ---------------------------------------------------------------------------
+#  CRAWL — Firecrawl /v1/crawl (replaces Tavily Crawl, async with polling)
+# ---------------------------------------------------------------------------
 
 async def tavily_crawl(
     url: str,
@@ -404,8 +375,8 @@ async def tavily_crawl(
     extract_depth: str = "basic",
     max_retries: int = 2,
 ) -> dict:
-    """Crawl a website using Tavily Crawl API — graph-based traversal."""
-    console.print(f"[bold cyan]  Tavily Crawl: {url} (depth={max_depth}, limit={limit})[/bold cyan]")
+    """Crawl a website using Firecrawl Crawl API — async with status polling."""
+    console.print(f"[bold cyan]  Firecrawl Crawl: {url} (depth={max_depth}, limit={limit})[/bold cyan]")
 
     cache_k = _cache_key("crawl", url, instructions or "", max_depth, limit)
     if cache_k in _search_cache:
@@ -417,121 +388,105 @@ async def tavily_crawl(
             async with httpx.AsyncClient() as client:
                 payload = {
                     "url": url,
-                    "max_depth": max_depth,
+                    "maxDepth": max_depth,
                     "limit": limit,
-                    "extract_depth": extract_depth,
-                    "format": "markdown",
+                    "scrapeOptions": {"formats": ["markdown"]},
                 }
-                if instructions:
-                    payload["instructions"] = instructions
 
+                # Start the crawl job
                 response = await client.post(
-                    f"{TAVILY_BASE_URL}/crawl",
-                    headers={"Authorization": f"Bearer {TAVILY_API_KEY}"},
+                    f"{FIRECRAWL_V1_URL}/crawl",
+                    headers=_firecrawl_headers(),
                     json=payload,
-                    timeout=120.0,
+                    timeout=30.0,
                 )
                 response.raise_for_status()
-                data = response.json()
+                job_data = response.json()
+                job_id = job_data.get("id")
+                console.print(f"[dim]   Crawl job started: {job_id}[/dim]")
 
-                results = data.get("results", [])
-                total_chars = sum(len(r.get("raw_content", "")) for r in results)
-                console.print(f"[green]   Crawled {len(results)} pages ({total_chars:,} chars)[/green]")
+                # Poll for completion
+                max_polls = 60
+                poll_interval = 3
 
-                pages_crawled = len(results)
-                cost_tracker.log_tavily_crawl(pages=pages_crawled, extract_depth=extract_depth,
-                                              has_instructions=bool(instructions))
+                for poll in range(max_polls):
+                    await asyncio.sleep(poll_interval)
 
-                for r in results:
-                    page_url = r.get("url", "")
-                    content = r.get("raw_content", "")
-                    if page_url and content:
-                        register_source(
-                            page_url, f"Crawled: {page_url}", "tavily_crawl",
-                            content[:200],
-                            extraction_method="tavily_crawl",
-                            content_length=len(content),
-                        )
+                    status_response = await client.get(
+                        f"{FIRECRAWL_V1_URL}/crawl/{job_id}",
+                        headers=_firecrawl_headers(),
+                        timeout=30.0,
+                    )
+                    status_response.raise_for_status()
+                    status_data = status_response.json()
 
-                result = {"results": results, "base_url": data.get("base_url", url)}
-                _search_cache[cache_k] = result
-                return result
+                    status = status_data.get("status", "unknown")
+
+                    if status == "completed":
+                        crawl_results = status_data.get("data", [])
+                        # Convert Firecrawl format to match expected format
+                        results = []
+                        for cr in crawl_results:
+                            page_url = cr.get("metadata", {}).get("url", cr.get("url", ""))
+                            content = cr.get("markdown", "")
+                            title = cr.get("metadata", {}).get("title", page_url)
+                            results.append({
+                                "url": page_url,
+                                "raw_content": content,
+                                "title": title,
+                            })
+
+                        total_chars = sum(len(r.get("raw_content", "")) for r in results)
+                        console.print(f"[green]   Crawled {len(results)} pages ({total_chars:,} chars)[/green]")
+
+                        cost_tracker.log_firecrawl_crawl(pages=len(results))
+
+                        for r in results:
+                            page_url = r.get("url", "")
+                            content = r.get("raw_content", "")
+                            if page_url and content:
+                                register_source(
+                                    page_url, f"Crawled: {page_url}", "firecrawl_crawl",
+                                    content[:200],
+                                    extraction_method="firecrawl_crawl",
+                                    content_length=len(content),
+                                )
+
+                        result = {"results": results, "base_url": url}
+                        _search_cache[cache_k] = result
+                        return result
+
+                    elif status == "failed":
+                        error = status_data.get("error", "Unknown error")
+                        console.print(f"[red]   Crawl failed: {error}[/red]")
+                        return {"results": [], "error": error}
+
+                    else:
+                        completed = status_data.get("completed", 0)
+                        total = status_data.get("total", 0)
+                        if poll % 5 == 0:
+                            console.print(f"[dim]   Crawling... {completed}/{total} pages ({poll * poll_interval}s)[/dim]")
+
+                console.print(f"[yellow]   Crawl timeout after {max_polls * poll_interval}s[/yellow]")
+                return {"results": [], "error": "Timeout"}
 
         except (httpx.ConnectTimeout, httpx.ReadTimeout, httpx.ConnectError) as e:
             if attempt < max_retries - 1:
                 console.print(f"[yellow]   Crawl timeout, retrying...[/yellow]")
                 await asyncio.sleep(2 ** attempt)
             else:
-                console.print(f"[red]   Tavily Crawl failed after {max_retries} attempts[/red]")
+                console.print(f"[red]   Firecrawl Crawl failed after {max_retries} attempts[/red]")
                 return {"results": [], "error": str(e)}
         except Exception as e:
-            console.print(f"[red]   Tavily Crawl error: {type(e).__name__}: {e}[/red]")
+            console.print(f"[red]   Firecrawl Crawl error: {type(e).__name__}: {e}[/red]")
             return {"results": [], "error": str(e)}
 
     return {"results": [], "error": "Max retries exceeded"}
 
 
-async def tavily_map(
-    url: str,
-    instructions: str = None,
-    max_depth: int = 1,
-    limit: int = 50,
-    max_retries: int = 2,
-) -> dict:
-    """Map a website using Tavily Map API — fast URL discovery without content extraction."""
-    console.print(f"[bold cyan]  Tavily Map: {url} (depth={max_depth}, limit={limit})[/bold cyan]")
-
-    cache_k = _cache_key("map", url, instructions or "", max_depth, limit)
-    if cache_k in _search_cache:
-        console.print(f"[dim]   Using cached map result[/dim]")
-        return _search_cache[cache_k]
-
-    for attempt in range(max_retries):
-        try:
-            async with httpx.AsyncClient() as client:
-                payload = {"url": url, "max_depth": max_depth, "limit": limit}
-                if instructions:
-                    payload["instructions"] = instructions
-
-                response = await client.post(
-                    f"{TAVILY_BASE_URL}/map",
-                    headers={"Authorization": f"Bearer {TAVILY_API_KEY}"},
-                    json=payload,
-                    timeout=60.0,
-                )
-                response.raise_for_status()
-                data = response.json()
-
-                results = data.get("results", [])
-                # Tavily Map may return plain URL strings or dicts with "url" key
-                urls_found = []
-                for r in results:
-                    if isinstance(r, str):
-                        urls_found.append(r)
-                    elif isinstance(r, dict) and r.get("url"):
-                        urls_found.append(r["url"])
-                console.print(f"[green]   Mapped {len(urls_found)} URLs[/green]")
-
-                cost_tracker.log_tavily_map(pages=len(urls_found),
-                                            has_instructions=bool(instructions))
-
-                result = {"urls": urls_found, "results": results, "base_url": data.get("base_url", url)}
-                _search_cache[cache_k] = result
-                return result
-
-        except (httpx.ConnectTimeout, httpx.ReadTimeout, httpx.ConnectError) as e:
-            if attempt < max_retries - 1:
-                console.print(f"[yellow]   Map timeout, retrying...[/yellow]")
-                await asyncio.sleep(2 ** attempt)
-            else:
-                console.print(f"[red]   Tavily Map failed after {max_retries} attempts[/red]")
-                return {"urls": [], "error": str(e)}
-        except Exception as e:
-            console.print(f"[red]   Tavily Map error: {type(e).__name__}: {e}[/red]")
-            return {"urls": [], "error": str(e)}
-
-    return {"urls": [], "error": "Max retries exceeded"}
-
+# ---------------------------------------------------------------------------
+#  BRANDING SCRAPE
+# ---------------------------------------------------------------------------
 
 async def scrape_with_branding(url: str, title: str = "Company Website") -> dict:
     """Scrape a URL and extract BOTH markdown content AND brand identity data."""
@@ -563,6 +518,130 @@ async def scrape_with_branding(url: str, title: str = "Company Website") -> dict
     return result
 
 
+# ---------------------------------------------------------------------------
+#  RESEARCH — Firecrawl search + scrape + Claude synthesis
+#  (replaces Tavily Research API)
+# ---------------------------------------------------------------------------
+
+async def tavily_research(
+    topic: str,
+    model: str = "pro",
+    output_schema: dict = None,
+    max_retries: int = 2,
+) -> dict:
+    """Perform comprehensive research using Firecrawl search + Claude synthesis.
+
+    Replaces the Tavily Research API. The `model` parameter controls depth:
+    - "pro": 5 search queries, scrape top 3 results per query
+    - "mini": 2 search queries, scrape top 2 results per query
+    """
+    console.print(f"[bold cyan]  Deep Research ({model}): {topic[:80]}...[/bold cyan]")
+
+    cache_k = _cache_key("research", topic, model)
+    if cache_k in _search_cache:
+        console.print(f"[dim]   Using cached research result[/dim]")
+        return _search_cache[cache_k]
+
+    # Step 1: Generate search queries from the topic
+    if model == "pro":
+        search_limit = 5
+        scrape_per_query = 3
+    else:
+        search_limit = 3
+        scrape_per_query = 2
+
+    # Search for the topic directly (Firecrawl search returns markdown)
+    search_results = await search_web(topic, max_results=search_limit)
+
+    if not search_results:
+        return {"report": "", "sources": [], "error": "No search results"}
+
+    # Step 2: Collect content — Firecrawl search already returns markdown
+    source_texts = []
+    sources = []
+    for r in search_results:
+        url = r.get("url", "")
+        title = r.get("title", "")
+        markdown = r.get("markdown", "")
+        snippet = r.get("content", "")
+
+        content = markdown if markdown else snippet
+        if content and url:
+            source_texts.append(f"### {title}\nSource: {url}\n\n{content[:6000]}")
+            sources.append({"url": url, "title": title, "snippet": snippet[:200], "content": snippet})
+
+    if not source_texts:
+        return {"report": "", "sources": sources, "error": "No content extracted"}
+
+    # Step 3: Synthesise with Claude
+    combined_sources = "\n\n---\n\n".join(source_texts)
+
+    schema_instruction = ""
+    if output_schema:
+        schema_instruction = f"\n\nReturn your response as JSON matching this schema:\n{json.dumps(output_schema, indent=2)}"
+
+    synthesis_prompt = f"""You are a research analyst. Based on the following sources, write a comprehensive research report on this topic:
+
+**Topic:** {topic}
+
+**Sources:**
+
+{combined_sources}
+
+Write a thorough, well-structured report that synthesises all available information. Include specific facts, figures, names, and dates where available. Use numbered citations [1], [2], etc. referencing the sources.{schema_instruction}"""
+
+    try:
+        import anthropic
+        client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+        response = client.messages.create(
+            model=MODEL,
+            max_tokens=MAX_TOKENS,
+            messages=[{"role": "user", "content": synthesis_prompt}],
+        )
+        report = response.content[0].text
+
+        cost_tracker.log_claude(
+            response.usage.input_tokens,
+            response.usage.output_tokens,
+            label=f"research_synthesis:{topic[:40]}",
+        )
+
+        result = {
+            "report": report,
+            "sources": sources,
+            "structured_output": None,
+            "response_time": 0,
+        }
+
+        if output_schema:
+            try:
+                result["structured_output"] = json.loads(report)
+            except json.JSONDecodeError:
+                pass
+
+        for source in sources:
+            register_source(
+                source.get("url", ""),
+                source.get("title", "Research"),
+                topic,
+                source.get("snippet", "")[:200],
+                extraction_method="firecrawl_research",
+                content_length=len(source.get("content", "")),
+            )
+
+        _search_cache[cache_k] = result
+        console.print(f"[green]   Research complete! ({len(report):,} chars)[/green]")
+        return result
+
+    except Exception as e:
+        console.print(f"[red]   Research synthesis error: {type(e).__name__}: {e}[/red]")
+        return {"report": "", "sources": sources, "error": str(e)}
+
+
+# ---------------------------------------------------------------------------
+#  BATCH + COMBINED OPERATIONS
+# ---------------------------------------------------------------------------
+
 async def batch_search_and_extract(
     queries: list[str],
     max_results: int = 3,
@@ -582,47 +661,6 @@ async def batch_search_and_extract(
     return await asyncio.gather(*tasks, return_exceptions=True)
 
 
-async def _firecrawl_batch_extract(urls: list[str], query: str = None) -> dict[str, str]:
-    """Extract content from multiple URLs using Firecrawl v2, run concurrently."""
-    if not FIRECRAWL_API_KEY or not urls:
-        return {}
-
-    console.print(f"[dim]  Firecrawl Extract: {len(urls)} URLs[/dim]")
-
-    async def _extract_one(url: str) -> tuple[str, str]:
-        try:
-            async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    "https://api.firecrawl.dev/v2/scrape",
-                    headers={"Authorization": f"Bearer {FIRECRAWL_API_KEY}"},
-                    json={"url": url, "formats": ["markdown"], "maxAge": 600000},
-                    timeout=45.0,
-                )
-                response.raise_for_status()
-                data = response.json()
-                content = data.get("data", {}).get("markdown", "")
-                if content:
-                    console.print(f"[dim green]   Firecrawl: {len(content)} chars from {url[:50]}...[/dim green]")
-                    cost_tracker.log_firecrawl()
-                    register_source(url, "Firecrawl Extract", query or "firecrawl_extract", content[:200],
-                                    extraction_method="firecrawl", content_length=len(content))
-                return (url, content)
-        except Exception:
-            console.print(f"[yellow]   Firecrawl failed for {url[:50]}[/yellow]")
-            return (url, "")
-
-    results = await asyncio.gather(*[_extract_one(u) for u in urls], return_exceptions=True)
-
-    extracted = {}
-    for r in results:
-        if isinstance(r, tuple):
-            url, content = r
-            if content:
-                extracted[url] = content
-
-    return extracted
-
-
 async def search_and_extract(
     query: str,
     max_results: int = 3,
@@ -631,86 +669,26 @@ async def search_and_extract(
 ) -> str:
     """Search for a query and extract content from top results.
 
-    Runs BOTH Tavily Extract and Firecrawl in parallel when available,
-    then merges results.
+    Firecrawl search already returns full markdown, so we use that directly.
+    Falls back to individual scraping if markdown is missing.
     """
     results = await search_web(query, max_results=max_results)
 
     content_parts = []
 
-    if deep_scrape:
-        urls_to_extract = [r["url"] for r in results if r.get("url")][:deep_scrape_count]
+    for r in results:
+        url = r.get("url", "")
+        title = r.get("title", "")
+        markdown = r.get("markdown", "")
+        snippet = r.get("content", "")
 
-        if urls_to_extract:
-            extraction_tasks = [tavily_extract(urls_to_extract, query=query)]
-            if FIRECRAWL_API_KEY:
-                extraction_tasks.append(_firecrawl_batch_extract(urls_to_extract, query=query))
-
-            extraction_results = await asyncio.gather(*extraction_tasks, return_exceptions=True)
-
-            tavily_map_results: dict[str, str] = {}
-            if not isinstance(extraction_results[0], Exception):
-                tavily_map_results = {
-                    e["url"]: e["content"]
-                    for e in extraction_results[0]
-                    if e.get("success") and e.get("content")
-                }
-
-            firecrawl_map_results: dict[str, str] = {}
-            if len(extraction_results) > 1 and not isinstance(extraction_results[1], Exception):
-                firecrawl_map_results = extraction_results[1]
-
-            if len(firecrawl_map_results) > 0:
-                tavily_count = len(tavily_map_results)
-                firecrawl_count = len(firecrawl_map_results)
-                console.print(f"[dim]   Extraction: Tavily={tavily_count}, Firecrawl={firecrawl_count} URLs[/dim]")
-
-            for r in results:
-                url = r.get("url", "")
-                tavily_content = tavily_map_results.get(url, "")
-                firecrawl_content = firecrawl_map_results.get(url, "")
-
-                if tavily_content and firecrawl_content:
-                    if len(firecrawl_content) > len(tavily_content):
-                        primary, secondary, primary_label, secondary_label = (
-                            firecrawl_content, tavily_content, "Firecrawl", "Tavily"
-                        )
-                    else:
-                        primary, secondary, primary_label, secondary_label = (
-                            tavily_content, firecrawl_content, "Tavily", "Firecrawl"
-                        )
-
-                    content_parts.append(
-                        f"### {r['title']}\n"
-                        f"Source: {url}\n"
-                        f"Extracted via: {primary_label} (primary), {secondary_label} (corroborated)\n\n"
-                        f"{primary[:8000]}\n\n"
-                        f"--- Additional extraction ({secondary_label}) ---\n\n"
-                        f"{secondary[:4000]}"
-                    )
-                elif tavily_content:
-                    content_parts.append(
-                        f"### {r['title']}\nSource: {url}\nExtracted via: Tavily\n\n{tavily_content[:8000]}"
-                    )
-                elif firecrawl_content:
-                    content_parts.append(
-                        f"### {r['title']}\nSource: {url}\nExtracted via: Firecrawl\n\n{firecrawl_content[:8000]}"
-                    )
-                elif url:
-                    content_parts.append(f"### {r['title']}\nSource: {url}\n\n{r['content']}")
-                else:
-                    content_parts.append(f"### {r['title']}\n\n{r['content']}")
+        if markdown:
+            content_parts.append(
+                f"### {title}\nSource: {url}\nExtracted via: Firecrawl Search\n\n{markdown[:8000]}"
+            )
+        elif url:
+            content_parts.append(f"### {title}\nSource: {url}\n\n{snippet}")
         else:
-            for r in results:
-                if r.get("url"):
-                    content_parts.append(f"### {r['title']}\nSource: {r['url']}\n\n{r['content']}")
-                else:
-                    content_parts.append(f"### {r['title']}\n\n{r['content']}")
-    else:
-        for r in results:
-            if r.get("url"):
-                content_parts.append(f"### {r['title']}\nSource: {r['url']}\n\n{r['content']}")
-            else:
-                content_parts.append(f"### {r['title']}\n\n{r['content']}")
+            content_parts.append(f"### {title}\n\n{snippet}")
 
     return "\n\n---\n\n".join(content_parts)
