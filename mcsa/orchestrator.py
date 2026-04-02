@@ -122,7 +122,14 @@ class MCSAOrchestrator:
             agency_results = await self.run_agency(agency, self.cadence)
             self.results[agency_name] = agency_results
 
-            # Phase 2: Alert detection — compare against history
+            # Phase 2a: Daily digest — single Slack message with only highlights
+            if self.cadence == CADENCE_DAILY:
+                try:
+                    await _generate_daily_digest(agency_name, agency_results)
+                except Exception as e:
+                    console.print(f"[yellow]  Daily digest failed for {agency_name}: {e}[/yellow]")
+
+            # Phase 2b: Alert detection — compare against history
             try:
                 await run_alert_detection(
                     agency_name, self.cadence, agency_results, self.registries
@@ -545,14 +552,19 @@ _INTERNAL_MODULES = {"topics", "key_people", "content_calendar", "social_followe
 
 
 def _save_formatted(agency_name: str, module: str, cadence: str, report: str, raw_path: Path) -> None:
-    """Save Slack and Confluence formatted versions alongside the raw report,
-    then deliver to Slack if enabled."""
-    # Skip Slack/Confluence delivery for internal data modules (contain raw JSON)
+    """Save formatted versions alongside the raw report, then deliver.
+
+    Daily cadence: saves reports locally but does NOT send individual modules
+    to Slack. Instead, a single consolidated digest is generated after all
+    modules complete (see _generate_daily_digest).
+
+    Weekly/monthly: delivers each module to Slack individually (higher-signal).
+    """
+    # Skip delivery for internal data modules (contain raw JSON)
     if module in _INTERNAL_MODULES:
         return
 
-    # Prepend a standardized header with the correct date (Python-generated,
-    # so even if Claude puts wrong dates in the body, the header is always right)
+    # Prepend a standardized header with the correct date
     header = (
         f"# {module.upper()} Intelligence — {agency_name}\n"
         f"## {cadence.title()} Report — {date.today().strftime('%A %d %B %Y')}\n\n"
@@ -562,15 +574,14 @@ def _save_formatted(agency_name: str, module: str, cadence: str, report: str, ra
     # Also update the raw report file with the header
     raw_path.write_text(report, encoding="utf-8")
 
-    # Slack version
+    # Daily: skip per-module Slack delivery (digest handles it)
     if cadence == CADENCE_DAILY:
-        slack_content = formatter.format_slack_daily(agency_name, module, report)
-    else:
-        slack_content = formatter.format_slack_summary(agency_name, module, report)
+        return
+
+    # Weekly/monthly: deliver each module individually to Slack
+    slack_content = formatter.format_slack_summary(agency_name, module, report)
     slack_path = raw_path.with_suffix(".slack.md")
     slack_path.write_text(slack_content, encoding="utf-8")
-
-    # Deliver to Slack
     deliver_to_slack(agency_name, module, cadence, slack_content)
 
     # Confluence version (for weekly and monthly)
@@ -579,11 +590,94 @@ def _save_formatted(agency_name: str, module: str, cadence: str, report: str, ra
         conf_path = raw_path.with_suffix(".confluence.md")
         conf_path.write_text(conf_content, encoding="utf-8")
 
-        # Deliver to Confluence
         try:
             deliver_to_confluence(agency_name, module, cadence, conf_content)
         except Exception as e:
             console.print(f"[yellow]  Confluence delivery failed: {e}[/yellow]")
+
+
+async def _generate_daily_digest(agency_name: str, reports: dict[str, str]) -> None:
+    """Generate a single daily highlights digest from all module reports.
+
+    Sends ONE Slack message per agency containing only genuinely noteworthy
+    items: new client wins, major hires, product launches, significant content,
+    competitive moves. Skips "no activity" filler entirely.
+    """
+    from core.agent import ResearchAgent
+    from core.config import ANTHROPIC_API_KEY, MODEL, MAX_TOKENS
+    from core.cost_tracker import cost_tracker
+
+    # Collect daily module reports (skip errors and internal modules)
+    module_texts = []
+    for module in ("linkedin", "industry", "website"):
+        text = reports.get(module, "")
+        if text and not text.startswith("[Error"):
+            module_texts.append(f"## {module.upper()}\n{text}")
+
+    if not module_texts:
+        console.print(f"[yellow]  Daily digest: no reports for {agency_name}[/yellow]")
+        return
+
+    combined = "\n\n---\n\n".join(module_texts)
+
+    prompt = f"""You are a competitive intelligence analyst writing a daily Slack digest for the agency "{agency_name}".
+
+Below are today's raw intelligence reports across LinkedIn, Industry, and Website monitoring.
+
+Your job: extract ONLY the genuinely important items and write a single tight digest. Apply strict editorial judgement:
+
+INCLUDE (these matter):
+- New client wins or account losses
+- Senior hires, departures, or leadership changes
+- Acquisitions, mergers, funding, or restructuring
+- Award wins or major shortlist announcements
+- Significant new service launches or pivots
+- Notable content that signals strategic direction
+- Regulatory or industry shifts that affect the competitive landscape
+
+EXCLUDE (this is noise):
+- Generic blog posts or routine content updates
+- "No new content detected" for any competitor
+- Low-confidence mentions or vague signals
+- Routine job postings (unless C-suite)
+- Minor website copy changes
+
+FORMAT (Slack mrkdwn):
+- Start with a one-line verdict: either "Nothing significant today." or a count like "3 items worth noting:"
+- If nothing significant, just send the one-line verdict — nothing more
+- For each item: *Bold competitor name* — what happened (1-2 sentences max)
+- No headers, no sections, no emojis, no filler — just the signal
+- Maximum 5 items. If more, pick the top 5 by impact.
+
+RAW REPORTS:
+
+{combined}"""
+
+    try:
+        import anthropic
+        client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+        response = client.messages.create(
+            model=MODEL,
+            max_tokens=1500,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        digest = response.content[0].text
+
+        cost_tracker.log_claude(
+            response.usage.input_tokens,
+            response.usage.output_tokens,
+            label=f"daily_digest:{agency_name}",
+        )
+
+        # Wrap with agency header
+        today_str = date.today().strftime("%A %d %B %Y")
+        slack_msg = f"*Daily Intel — {agency_name}*\n_{today_str}_\n\n{digest}"
+
+        deliver_to_slack(agency_name, "daily_digest", CADENCE_DAILY, slack_msg)
+        console.print(f"[green]  Daily digest delivered for {agency_name} ({len(digest)} chars)[/green]")
+
+    except Exception as e:
+        console.print(f"[red]  Daily digest failed for {agency_name}: {e}[/red]")
 
 
 def _save_website_snapshots(agency_name: str, web_ctx: dict, competitors: list[dict]) -> None:
