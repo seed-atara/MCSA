@@ -110,8 +110,6 @@ def _voice_context(agency: dict) -> str:
     )
 
 
-# Keep backward-compat reference for any external usage
-_GOVERNANCE = _governance()
 
 # ---------------------------------------------------------------------------
 # Token budget constants by cadence
@@ -1593,3 +1591,84 @@ class SocialFollowerAgent(ResearchAgent):
         except (ValueError, json.JSONDecodeError) as e:
             console.print(f"[yellow]  Followers JSON parse failed: {e}[/yellow]")
             return []
+
+
+# ---------------------------------------------------------------------------
+# Module 11 — Digital PR Opportunity Agent
+# ---------------------------------------------------------------------------
+
+class DigitalPRAgent(ResearchAgent):
+    """Scans news daily to surface reactive PR opportunities for each agency.
+
+    Inspired by Finchling — the core mechanism is LLM evaluation, not keyword
+    matching. For each story found, the agent asks: "does this create a reactive
+    PR opportunity for this agency?" and if yes, generates a ready-made pitch angle.
+
+    Daily cadence only. Lightweight search, no deep scraping.
+    """
+
+    def __init__(self):
+        super().__init__(
+            "Digital PR Agent",
+            "Surfaces reactive PR opportunities from daily news for organic/BD teams",
+        )
+
+    async def research(self, agency: dict, context: dict) -> str:
+        agency_name = agency["name"]
+        agency_focus = agency.get("focus", "")
+        pr_topics = agency.get("pr_topics", [])
+        competitors = context.get("competitors", [])
+        cadence = context.get("cadence", "daily")
+
+        comp_names = [c.get("name", "") for c in competitors if c.get("name")][:6]
+
+        # Build search queries around this agency's PR topics
+        topic_query = " OR ".join(f'"{t}"' for t in pr_topics[:5]) if pr_topics else agency_focus
+        comp_query = " OR ".join(f'"{n}"' for n in comp_names[:4]) if comp_names else ""
+
+        queries = [
+            f"({topic_query}) news UK 2026",
+            f"{agency_focus} research report OR survey OR study 2026",
+            f"({topic_query}) controversy OR debate OR backlash 2026",
+            f"Campaign OR \"The Drum\" OR \"Marketing Week\" {agency_focus} 2026",
+        ]
+        if comp_query:
+            queries.append(f"({comp_query}) OR ({topic_query}) award OR shortlist OR launch 2026")
+
+        raw_data = await _lightweight_search(queries, max_results=4)
+
+        if not raw_data.strip():
+            return f"[DigitalPR] No news data retrieved for {agency_name}."
+
+        # Build the topic list for the prompt
+        topics_str = "\n".join(f"- {t}" for t in pr_topics) if pr_topics else f"- {agency_focus} general topics"
+
+        system = (
+            f"You are a Digital PR strategist for {agency_name} (Tomorrow Group).\n\n"
+            f"{agency_name} specialises in: {agency_focus}\n\n"
+            f"PR TOPICS THIS AGENCY CAN CREDIBLY COMMENT ON:\n{topics_str}\n\n"
+            f"TASK: Scan today's news stories below. For each story, evaluate whether it creates "
+            f"a reactive PR opportunity — i.e. a chance for {agency_name} to provide expert "
+            f"commentary, pitch a data angle, or newsjack with a relevant take.\n\n"
+            f"EVALUATION CRITERIA (Finchling-style):\n"
+            f"- Does this story touch a topic {agency_name} has genuine expertise in?\n"
+            f"- Is there a non-obvious angle or contrarian take we could credibly own?\n"
+            f"- Is the story fresh enough to still be reactive (not stale)?\n"
+            f"- Could this earn a link from a publication that reaches our target clients?\n\n"
+            f"INCLUDE only stories with a genuine, non-forced connection. Reject weak matches.\n\n"
+            f"OUTPUT FORMAT (Slack mrkdwn, max 5 opportunities):\n"
+            f"For each opportunity:\n"
+            f"*PRIORITY: HIGH / MEDIUM / LOW*\n"
+            f"*STORY:* [headline + publication]\n"
+            f"*WHY IT MATTERS:* [1 sentence — why this story is relevant to {agency_name}]\n"
+            f"*PITCH ANGLE:* [ready-to-use angle — data hook / expert POV / lateral connection]\n"
+            f"*WINDOW:* [how long before the story goes cold — e.g. 'Act today' / '2-3 days']\n"
+            f"*COMPETITOR ACTIVITY:* [has any tracked competitor already reacted? If unknown, say so]\n\n"
+            f"If there are no genuine opportunities today, reply with exactly: "
+            f"\"No reactive PR opportunities identified today.\"\n\n"
+            f"Never invent stories. Only use what's in the research data below."
+            + _governance()
+        )
+
+        user = f"TODAY'S NEWS DATA:\n\n{raw_data[:_DAILY_CONTEXT_LIMIT]}"
+        return await self._call_claude(system, user, max_tokens=_DAILY_MAX_TOKENS, context=context)

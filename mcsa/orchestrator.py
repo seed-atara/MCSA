@@ -19,7 +19,7 @@ from core.tools import clear_sources, get_all_sources
 from core.cost_tracker import cost_tracker
 
 from .config import AGENCIES, REPORTS, CADENCE_DAILY, CADENCE_WEEKLY, CADENCE_MONTHLY
-from .agents import RegistryAgent, LinkedInAgent, IndustryAgent, DIFFAgent, WebsiteAgent, ContentStrategyAgent, TopicIntelligenceAgent, KeyPeopleAgent, ContentCalendarAgent, SocialFollowerAgent
+from .agents import RegistryAgent, LinkedInAgent, IndustryAgent, DIFFAgent, WebsiteAgent, ContentStrategyAgent, TopicIntelligenceAgent, KeyPeopleAgent, ContentCalendarAgent, SocialFollowerAgent, DigitalPRAgent
 from . import storage
 from . import formatter
 from .slack import deliver_to_slack
@@ -69,6 +69,7 @@ class MCSAOrchestrator:
         self.key_people_agent = KeyPeopleAgent()
         self.content_calendar_agent = ContentCalendarAgent()
         self.social_follower_agent = SocialFollowerAgent()
+        self.digital_pr_agent = DigitalPRAgent()
 
     def _check_registry_overlap(self) -> None:
         """Log warnings when the same competitor appears in multiple agency registries."""
@@ -278,6 +279,14 @@ class MCSAOrchestrator:
                         web_ctx["_prev_snapshots"][comp_name] = prev
             phase2_tasks.append(self.website_agent.research(agency, web_ctx))
             phase2_labels.append("website")
+
+            # Digital PR (daily only — reactive news opportunities for organic/BD teams)
+            pr_ctx = {
+                "competitors": competitors,
+                "cadence": cadence,
+            }
+            phase2_tasks.append(self.digital_pr_agent.research(agency, pr_ctx))
+            phase2_labels.append("digital_pr")
 
             # Key People (parallel with other Phase 2 modules)
             existing_people = storage.load_key_people(agency_name, limit=10)
@@ -609,7 +618,7 @@ async def _generate_daily_digest(agency_name: str, reports: dict[str, str]) -> N
 
     # Collect daily module reports (skip errors and internal modules)
     module_texts = []
-    for module in ("linkedin", "industry", "website"):
+    for module in ("linkedin", "industry", "website", "digital_pr"):
         text = reports.get(module, "")
         if text and not text.startswith("[Error"):
             module_texts.append(f"## {module.upper()}\n{text}")
@@ -655,10 +664,13 @@ RAW REPORTS:
 
     try:
         import anthropic
+        from datetime import date as _date
+        today_str = _date.today().strftime("%A %d %B %Y")
         client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
         response = client.messages.create(
             model=MODEL,
             max_tokens=1500,
+            system=f"TODAY'S DATE: {today_str}. Use this date for all report headers and references.",
             messages=[{"role": "user", "content": prompt}],
         )
         digest = response.content[0].text

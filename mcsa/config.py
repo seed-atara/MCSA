@@ -76,6 +76,11 @@ AGENCIES: list[dict] = [
         "headcount": 70,
         "website": "www.found.co.uk",
         "focus": "SEO, PPC, digital performance marketing",
+        "pr_topics": [
+            "Google algorithm updates", "AI search", "zero-click search", "SGE",
+            "attribution modelling", "performance marketing budgets", "paid search CPCs",
+            "agency new business wins", "marketing effectiveness research",
+        ],
         "facts": {
             "founded": "2009",
             "locations": ["London"],
@@ -121,6 +126,11 @@ AGENCIES: list[dict] = [
         "headcount": None,
         "website": "www.seedstudios.ai",
         "focus": "Content strategy, social media, creative production",
+        "pr_topics": [
+            "social media algorithm changes", "creator economy trends", "content marketing ROI",
+            "brand social media strategy", "short-form video", "TikTok brand marketing",
+            "content production budgets", "AI content tools", "brand storytelling",
+        ],
         "facts": {
             "founded": "2025",
             "age": "Under 1 year old — launched 2025",
@@ -164,6 +174,11 @@ AGENCIES: list[dict] = [
         "headcount": None,
         "website": "braidr.ai",
         "focus": "Data, analytics, marketing science",
+        "pr_topics": [
+            "marketing measurement", "marketing mix modelling", "attribution",
+            "AI in analytics", "data privacy regulation", "third-party data deprecation",
+            "marketing ROI proof", "customer data platforms", "analytics agency market",
+        ],
         "facts": {
             "founded": "2024",
             "locations": ["London"],
@@ -214,6 +229,12 @@ AGENCIES: list[dict] = [
         "headcount": None,
         "website": "disruptmarketing.co",
         "focus": "Creator economy, influencer marketing, paid social",
+        "pr_topics": [
+            "influencer marketing trends", "creator economy", "paid social performance",
+            "celebrity brand deals", "influencer fraud", "creator monetisation",
+            "TikTok advertising", "Instagram reach", "brand creator partnerships",
+            "influencer regulation ASA", "cultural moments brand activations",
+        ],
         "facts": {
             "founded": "2024",
             "locations": ["London"],
@@ -262,6 +283,12 @@ AGENCIES: list[dict] = [
         "headcount": None,
         "website": "www.culture3.com",
         "focus": "Web3, emerging technology, innovation",
+        "pr_topics": [
+            "Web3 brand adoption", "NFT marketing", "AI creative tools",
+            "metaverse brand activations", "blockchain transparency",
+            "emerging tech regulation", "digital ownership", "tokenised loyalty",
+            "decentralised social media", "AI art copyright",
+        ],
         "facts": {
             "founded": "2022",
             "locations": ["London"],
@@ -342,6 +369,8 @@ REPORTS: list[dict] = [
     {"module": "website", "name": "Website Pattern Report", "cadence": CADENCE_WEEKLY, "channel": "confluence", "audience": "Agency MDs"},
     # Module 6 — Content Strategy
     {"module": "content_strategy", "name": "Content Strategy Brief", "cadence": CADENCE_WEEKLY, "channel": "slack+confluence", "audience": "Agency MDs + Marketing Leads"},
+    # Module 11 — Digital PR
+    {"module": "digital_pr", "name": "Digital PR Opportunity Alert", "cadence": CADENCE_DAILY, "channel": "slack", "audience": "Organic / BD Teams"},
 ]
 
 # ---------------------------------------------------------------------------
