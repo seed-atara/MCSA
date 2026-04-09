@@ -139,6 +139,18 @@ async def search_web(query: str, max_results: int = 5, max_retries: int = 3) -> 
             _search_cache[cache_k] = results
             return results
 
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 429:
+                wait = 30 * (attempt + 1)
+                console.print(f"[yellow]  Search rate limited, waiting {wait}s (attempt {attempt + 1}/{max_retries})...[/yellow]")
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(wait)
+                else:
+                    console.print(f"[red]  Search giving up after {max_retries} attempts: {query}[/red]")
+                    return []
+            else:
+                console.print(f"[red]  Search HTTP error: {e}[/red]")
+                return []
         except (httpx.ConnectTimeout, httpx.ReadTimeout, httpx.ConnectError):
             if attempt < max_retries - 1:
                 console.print(f"[yellow]  Search timeout, retrying ({attempt + 2}/{max_retries})...[/yellow]")
@@ -209,6 +221,18 @@ async def _scrape_with_firecrawl(url: str, max_retries: int = 2, include_brandin
 
                 return content
 
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 429:
+                wait = 30 * (attempt + 1)
+                console.print(f"[yellow]   Firecrawl scrape rate limited, waiting {wait}s (attempt {attempt + 1}/{max_retries})...[/yellow]")
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(wait)
+                    continue
+            console.print(f"[yellow]   Firecrawl scrape error, falling back to basic[/yellow]")
+            if include_branding:
+                basic = await _scrape_basic(url)
+                return {"markdown": basic, "branding": None}
+            return await _scrape_basic(url)
         except (httpx.ConnectTimeout, httpx.ReadTimeout, httpx.ConnectError):
             if attempt < max_retries - 1:
                 console.print(f"[yellow]   Firecrawl timeout, retrying...[/yellow]")
@@ -349,6 +373,18 @@ async def tavily_map(
                 _search_cache[cache_k] = result
                 return result
 
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 429:
+                wait = 30 * (attempt + 1)
+                console.print(f"[yellow]   Firecrawl Map rate limited, waiting {wait}s (attempt {attempt + 1}/{max_retries})...[/yellow]")
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(wait)
+                else:
+                    console.print(f"[red]   Firecrawl Map giving up after {max_retries} attempts[/red]")
+                    return {"urls": [], "error": str(e)}
+            else:
+                console.print(f"[red]   Firecrawl Map error: {type(e).__name__}: {e}[/red]")
+                return {"urls": [], "error": str(e)}
         except (httpx.ConnectTimeout, httpx.ReadTimeout, httpx.ConnectError) as e:
             if attempt < max_retries - 1:
                 console.print(f"[yellow]   Map timeout, retrying...[/yellow]")

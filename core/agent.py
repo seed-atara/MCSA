@@ -72,6 +72,16 @@ class ResearchAgent:
                 wait = 30 * (attempt + 1)  # 30s, 60s, 90s, 120s
                 console.print(f"[yellow]Rate limited ({self.name}), waiting {wait}s... (attempt {attempt + 1}/4)[/yellow]")
                 await asyncio.sleep(wait)
+            except anthropic.BadRequestError as e:
+                # Credit balance errors are permanent — fail immediately, don't retry
+                if "credit balance is too low" in str(e):
+                    console.print(f"[red]Anthropic credit balance exhausted — top up at console.anthropic.com[/red]")
+                    raise
+                last_error = e
+                if attempt < 3:
+                    wait = 2 ** attempt
+                    console.print(f"[yellow]Claude API error ({self.name}), retrying in {wait}s: {e}[/yellow]")
+                    await asyncio.sleep(wait)
             except Exception as e:
                 last_error = e
                 if attempt < 3:
